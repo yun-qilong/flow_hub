@@ -1,0 +1,36 @@
+[33mcommit d0d9ff2ee54405f355136a25903730f551b8997a[m[33m ([m[1;36mHEAD -> [m[1;32mmain[m[33m)[m
+Merge: 77de34a 73ca74b
+Author: xiangjidaizou <775631330@qq.com>
+Date:   Sun May 24 21:58:11 2026 +0800
+
+    Merge branch 'main' of github.com:yun-qilong/flow_Hub
+
+[33mcommit 77de34abbb11a9a07bf917c0815dfd784bd16455[m
+Author: xiangjidaizou <775631330@qq.com>
+Date:   Sun May 24 21:41:06 2026 +0800
+
+    [Chore] update .gitignore rules
+    - exclude build directory
+    - exclude IDE config files
+    - exclude .continue plugin config
+
+[33mcommit 73ca74b1362cd1d2d018742ab0257b22d3ac8d03[m[33m ([m[1;31morigin/main[m[33m)[m
+Author: xiangjidaizou <775631330@qq.com>
+Date:   Sun May 24 21:41:06 2026 +0800
+
+    [Chore] update .gitignore rules
+    - exclude build directory
+    - exclude IDE config files
+    - exclude .continue plugin config
+
+[33mcommit 3065e5bd7454825cc83aa335073e5a0306a82127[m
+Author: yun-qilong <yun_qilong@qq.com>
+Date:   Sun May 24 19:24:56 2026 +0800
+
+    [Docs]add architecture overview README
+    
+    - add one access layer + three layers with two planes architecture
+    - add EO deployment per layer and naming conventions
+    - add message flow sequence diagrams (Setup, AI chat, device event)
+    - add router evolution roadmap (Phase 1-4)
+    - add framework abstraction layer design placeholder
