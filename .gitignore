@@ -5,6 +5,9 @@ cmake-build-*/
 *.obj
 *.exe
 
+# Generated code
+src/generated/
+
 # IDE
 .vscode/
 .idea/
@@ -19,5 +22,9 @@ Thumbs.db
 # Dependencies
 _deps/
 
+# Language server
+.cache/
+
 #Plugin
 .continue/
+.github/

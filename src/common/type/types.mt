@@ -1,0 +1,1 @@
+define GTID = uint16

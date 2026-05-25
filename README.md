@@ -1,7 +1,7 @@
 # Flow Hub
 
 > 一个基于 Actor 模型的消息驱动嵌入式编排平台  
-> 版本：v0.1  |  最后更新：2026-05-24
+> 版本：v0.2  |  最后更新：2026-05-28
 
 ---
 
@@ -54,8 +54,8 @@ EO(Entity Object) 是本架构中最小的独立业务逻辑单元，采用 Acto
 | 上下文层级 | 存储内容 | 维护者 |
 |-----------|---------|--------|
 | **SessionContext** | 会话 ID → 业务地址映射、会话状态 | SessionMgr |
-| **BusinessContext** | 业务实例 → 服务层业务 EO 地址、运行状态、规则列表 | BusinessMgr |
-| **ServiceContext** | 设备注册表 | ServiceMgr |
+| **BusinessContext** | 业务实例 → 服务层业务 EO 地址、运行状态、规则列表、设备数据（DataManager 写入） | BusinessMgr |
+| **ServiceContext** | 设备注册表、ServiceGateway 分发表、ProtocolGateway 过滤规则 | ServiceMgr |
 
 **原子性规则**：所有上下文修改必须与消息发送原子绑定，禁止在消息处理中间过程中修改上下文。日志/可观测性数据的写入不受此约束。
 
@@ -113,15 +113,16 @@ graph TB
         R["D-Plane Router"]
         AI["D-Plane AiChatBus"]
         AU["D-Plane AutomationBus"]
+        DM["D-Plane DataManager"]
     end
 
     subgraph Service["Service Layer 服务层"]
         SVM["C-Plane ServiceMgr"]
-        APISvc["D-Plane AIAPISvc"]
-        MiSvc["D-Plane MiHomeSvc"]
-        DG["D-Plane DeviceGateway"]
-        MiAd["MiHomeAdapter 非Actor"]
-        APIAd["AIApiAdapter 非Actor"]
+        SG["D-Plane ServiceGateway"]
+        PG["D-Plane ProtocolGateway"]
+        MqttAd["MqttAdapter 非Actor"]
+        ApiAd["AiApiAdapter 非Actor"]
+        CanAd["CanAdapter 非Actor"]
     end
 
     AG --> SM
@@ -133,20 +134,17 @@ graph TB
     SD --> R
     R --> AI
     R --> AU
+    R --> DM
     AI --> R
     AU --> R
-    R --> APISvc
-    R --> MiSvc
-    APISvc --> DG
-    MiSvc --> DG
-    DG --> APIAd
-    DG --> MiAd
-    APIAd --> DG
-    MiAd --> DG
-    DG --> APISvc
-    DG --> MiSvc
-    APISvc --> R
-    MiSvc --> R
+    DM --> R
+    MqttAd --> SG
+    ApiAd --> SG
+    CanAd --> PG
+    SG --> R
+    PG --> R
+    SVM --> SG
+    SVM --> PG
 ```
 
 ### 各层一句话定位
@@ -154,9 +152,15 @@ graph TB
 | 层 | 职责 | 分面 |
 |----|------|------|
 | **接入层** | 怎么连进来——把外部消息翻译成内部格式 | 不分面 |
-| **会话层** | 谁在说话——管会话、管消息收发 | C: 会话生命周期 / D: 数据收发 |
-| **业务层** | 要干什么——所有业务逻辑在这里 | C: 资源分配 / D: 路由+业务+规则引擎 |
-| **服务层** | 谁能干活——对接 AI、米家、Modbus、NPU 等 | C: 设备生命周期 / D: 业务交互+设备网关+协议适配 |
+| **会话层** | 谁在说话——管会话、管消息收发 | C: 会话生命周期（重心）/ D: 消息包装转发 |
+| **业务层** | 要干什么——所有业务逻辑在这里 | C: 资源分配 / D: 路由+业务+规则引擎+数据管理（重心） |
+| **服务层** | 谁能干活——对接 AI、米家、Modbus、NPU 等 | C: 设备生命周期 / D: 智能设备入口+傻瓜设备入口+协议适配 |
+
+> **Session Layer 的不对称性**：重心在 C 面。"会话"天然是控制面概念——身份、生命周期、窗口关联、状态持久化。D 面（SessionData）的作用是剥离非控制类的杂活（消息包装、返回路径管理），让 Mgr 集中精力做控制决策。这与 Business Layer 相反——Business Layer 的重心在 D 面，因为"路由"天然是数据面概念。
+>
+> **Window 与会话**：多个 Window（来自不同 Adapter 的连接窗口）可以属于同一个 Session。用户从 CLI 和 WebSocket 同时接入，共享同一段对话——这就是同一 Session 下的多个 Window。Window 与会话的映射由 SessionMgr 管理。
+>
+> **所有流都有 GTID**：所有进入系统的流都携带 GTID——不管发起者是人、物、还是 Mgr。设备上报数据的 GTID 由 ServiceMgr 在配置时附加。流没有归属 → 无法暂停、无法调整频率、无法查询历史——因此每条流都必须关联一个 GTID。
 
 ---
 
@@ -179,37 +183,34 @@ Business Layer（业务层）
              AiPanelBus      多 AI 讨论（裁判模式，未来）
              SceneBus        场景管理
              AutomationBus   规则引擎（跨生态设备编排核心）
+             DataManager     设备数据落地 + 冷热切换 + 老化（纯数据 EO，不参与编排）
 
 Service Layer（服务层）
-├── C-Plane: ServiceMgr      设备发现、连接管理、选择服务层业务 EO、维护 ServiceContext
-└── D-Plane: AIAPISvc        接收业务层 AI 请求，通过 DeviceGateway 发 HTTP 给 AI 接口
-             MiHomeSvc       维护行为表，条件判断，通过 DeviceGateway 控制 Adapter 订阅
-             DeviceGateway   设备注册表（device_id -> Adapter），服务层内部转发
-             AIApiAdapter    纯协议翻译：内部消息 <-> HTTP（非 Actor）
-             MiHomeAdapter   纯协议翻译：内部消息 <-> MQTT（非 Actor）
-             ModbusAdapter   Modbus RTU/TCP（预留）
-             NPUAdapter      NPU 推理结果接入（预留）
+├── C-Plane: ServiceMgr      设备发现、连接管理、维护设备注册表、配置分发表和过滤规则
+└── D-Plane: ServiceGateway   智能设备入口——接收已规范化的消息，查分发表 fan-out 给 Router
+             ProtocolGateway  傻瓜设备入口——过滤垃圾数据 → 规范化 → fan-out 给 Router（与 ServiceGateway 平级）
+             MqttAdapter      纯协议翻译：内部消息 <-> MQTT（非 Actor）
+             AiApiAdapter     纯协议翻译：内部消息 <-> HTTP（非 Actor）
+             CanAdapter       CAN Bus 协议适配（预留，非 Actor）
+             ModbusAdapter    Modbus RTU/TCP（预留，非 Actor）
+             NPUAdapter       NPU 推理结果接入（预留，非 Actor）
 ```
 
-### 服务层 D 面三层结构
+### Service Layer D 面：按设备自治能力分流
 
-```
-业务层 EO（经 Router）--> 服务层业务 EO（AIAPISvc / MiHomeSvc）
-                                |
-                                +-- 维护行为表（MiHomeSvc）
-                                +-- 条件判断
-                                |
-                                v
-                          DeviceGateway
-                                |
-                                +-- 设备注册表（device_id -> Adapter）
-                                |
-                                v
-                           Adapter（非 Actor）
-                                |
-                                +-- 纯协议翻译，不做过滤
-                                +-- 全量上报，取消订阅前持续监听
-```
+Service Layer D 面不再有"每种服务一个 Svc EO"。只有两个平级入口，按设备自治能力分类：
+
+| 入口 | 对接的设备类型 | 职责 |
+|---|---|---|
+| **ServiceGateway** | 智能设备（MQTT、AI API、HTTP Polling 等） | 接收已规范化的消息，查分发表 fan-out 给 Router。不做过 |
+| **ProtocolGateway** | 傻瓜设备（CAN 总线、Modbus、高频上报传感器等） | 过滤垃圾数据 → 规范化 → fan-out 给 Router。管教无自我管理能力的设备 |
+
+**两者是平级的。** ProtocolGateway 不是 ServiceGateway 的下游——傻瓜设备路径不经过 ServiceGateway。适配器由 ServiceMgr 配置目标 handle，不知道自己对接的是哪种入口。
+
+**入口选择原则**：
+- MQTT、AI API 等协议自带过滤能力（Broker/服务端做了订阅），Adapter 收上来的数据已经是干净的。走 ServiceGateway。
+- CAN、Modbus 等总线上的数据全收，需系统主动过滤。走 ProtocolGateway。
+- HTTP Polling 等由 Adapter 主动控制的协议，和 MQTT 类似，走 ServiceGateway。
 
 ---
 
@@ -226,7 +227,8 @@ Service Layer（服务层）
 | **同层 D 面 <-> D 面** | 直接通信，目标 EO 地址记录在对应业务的上下文中 |
 | **跨层 D 面直连** | 需控制面签发通信许可证 |
 | **C 面 <-> 同层 D 面** | 可直接通知 |
-| **服务层 D 面内部** | 业务 EO -> DeviceGateway -> Adapter，不经过 Router |
+| **服务层 -> 业务层** | Adapter → ServiceGateway/ProtocolGateway → Router → Business EO |
+| **ServiceMgr -> ServiceGateway/ProtocolGateway** | C 面配置 D 面（分发表/过滤规则），直接通信 |
 
 ### 6.2 Router 与双地址
 
@@ -265,7 +267,6 @@ sequenceDiagram
     BMC->>SVC: SetupReq
 
     Note over SVC: 确认线路正常
-    Note over SVC: 选择服务 EO ai_api_svc
 
     SVC-->>BMC: SetupResp
 
@@ -280,8 +281,8 @@ sequenceDiagram
 
 - 全程 C 面对 C 面
 - BusinessMgr **选择**已有 EO，非每次实例化
-- ServiceMgr 返回服务层业务 EO 的 ID
-- BusinessContext 记录 `session_eo`——业务 EO 调服务时 SchedulerAddress 填对应值
+- ServiceMgr 确认服务层线路正常后返回确认
+- BusinessContext 记录会话对应的 SchedulerAddress
 
 ### 6.4 AI 对话消息流转
 
@@ -293,9 +294,8 @@ sequenceDiagram
     participant SD as SessionData
     participant R as Router
     participant AI as AiChatBus
-    participant APISvc as AIAPISvc
-    participant DG as DeviceGateway
-    participant APIAd as AIApiAdapter
+    participant SG as ServiceGateway
+    participant ApiAd as AiApiAdapter
     participant ExtAPI as AI API
 
     User->>CLI: 你好
@@ -305,16 +305,14 @@ sequenceDiagram
     R->>AI: 查表转发
 
     Note over AI: 查 BusinessContext
+    Note over AI: 构造 AI API 请求
 
-    AI->>R: 双地址消息
-    R->>APISvc: 查表转发
-    APISvc->>DG: HTTP 请求
-    DG->>APIAd: 转发
-    APIAd->>ExtAPI: HTTP POST
-    ExtAPI-->>APIAd: AI 回复
-    APIAd-->>DG: 回复
-    DG-->>APISvc: 回复
-    APISvc-->>R: 应答
+    AI->>SG: AI 请求消息
+    SG->>ApiAd: 转发
+    ApiAd->>ExtAPI: HTTP POST
+    ExtAPI-->>ApiAd: AI 回复
+    ApiAd-->>SG: 回复
+    SG-->>R: 应答（经 Router）
     R-->>AI: 应答
     AI-->>R: resp
     R-->>SD: resp
@@ -323,49 +321,56 @@ sequenceDiagram
     CLI-->>User: AI 回复
 ```
 
-### 6.5 设备事件驱动（自动化规则）
+- AiChatBus 直接通过 ServiceGateway 调用 AI API，无需经过中间服务 EO
+- AiApiAdapter 是纯粹的协议翻译器（内部消息 ↔ HTTP），不参与路由决策
+
+### 6.5 设备数据流
+
+**两条路径汇入 Router，Router 做 fan-out 分发。**
 
 ```mermaid
 sequenceDiagram
+    participant MqttDev as MQTT 设备
+    participant MqttAd as MqttAdapter
+    participant SG as ServiceGateway
+    participant CanDev as CAN 设备
+    participant CanAd as CanAdapter
+    participant PG as ProtocolGateway
+    participant R as Router
+    participant DM as DataManager
     participant AU as AutomationBus
-    participant MiSvc as MiHomeSvc
-    participant DG as DeviceGateway
-    participant MiAd as MiHomeAdapter
-    participant GW as 小米中枢
-    participant Sensor as 温度传感器
 
-    Note over AU,Sensor: === 订阅阶段 ===
-    AU->>MiSvc: Subscribe
+    Note over MqttDev,AU: === 智能设备路径（MQTT）===
+    MqttDev->>MqttAd: 上报数据
+    MqttAd->>SG: 规范化消息
+    SG->>R: fan-out 分发
 
-    Note over MiSvc: 行为表记录
+    Note over MqttDev,AU: === 傻瓜设备路径（CAN）===
+    CanDev->>CanAd: 原始信号
+    CanAd->>PG: 原始数据
 
-    MiSvc->>DG: Subscribe
-    DG->>MiAd: MQTT Subscribe
-    MiAd->>GW: MQTT Subscribe
-    MiAd-->>MiSvc: OK
+    Note over PG: 过滤垃圾数据
+    Note over PG: 规范化
 
-    Note over AU,Sensor: === 上报阶段 ===
-    Sensor->>GW: 上报 28度
-    GW->>MiAd: MQTT publish
-    MiAd->>DG: DeviceStatus
-    DG->>MiSvc: DeviceStatus
+    PG->>R: fan-out 分发
 
-    Note over MiSvc: 查行为表 条件满足
-
-    MiSvc->>AU: DeviceEvent
-
-    Note over MiSvc: mode=once 删除此条
-    Note over MiSvc: 取消订阅
-
-    MiSvc->>DG: Unsubscribe
-    DG->>MiAd: MQTT Unsubscribe
+    Note over R,AU: === Router fan-out 同时发给多个目标 ===
+    R->>DM: 数据落地存储
+    R->>AU: 实时消费（规则判断）
 ```
 
-- AutomationBus **自行决定**发起订阅，非 Setup 阶段完成
-- MiHomeSvc 维护行为表（订阅者、触发条件、一次性/持续）
-- MiHomeAdapter 不做任何过滤，MQTT 收到的全量上报
-- 条件判断全部在 MiHomeSvc 的行为表中完成
-- 一次性订阅触发后自动清理并取消 MQTT 订阅
+**消费者有两种获取数据的方式**：
+
+| 方式 | 路径 | 优点 | 缺点 |
+|---|---|---|---|
+| **快路径** | 从 BusinessContext 读 DataManager 写入的冷数据 | 零消息开销，同 Flow 内完成 | 数据可能有延迟 |
+| **慢路径** | Router fan-out 时实时收到数据 | 实时，拿到最新值 | 跨 Flow，有消息开销 |
+
+**选择权在消费者。** Router 的 fan-out 能力让同一条设备数据可以同时发给 DataManager（存储）和 AutomationBus（实时消费）。
+
+- ServiceGateway 和 ProtocolGateway 都**不直接决定最终目标**——它们只负责"把干净的数据交给 Router"，由 Router 查表完成精确路由和 fan-out
+- Adapter 的订阅管理（MQTT topic 订阅、CAN 信号过滤配置）由 ServiceMgr 直接指挥
+- 行为表逻辑（条件判断、触发规则）在 AutomationBus 中完成
 
 ---
 
@@ -373,7 +378,9 @@ sequenceDiagram
 
 ### 7.1 协议扩展
 
-新增智能家居协议或工业总线，仅需在服务层新增一个 Adapter 和一个对应的服务层业务 EO（Svc），向 DeviceGateway 和 ServiceMgr 注册。业务层和会话层代码零修改。
+新增智能家居协议或工业总线：
+- **智能设备**（如新 MQTT 设备）：新增 Adapter → 向 ServiceGateway 注册 → ServiceMgr 配置分发表。业务层零修改。
+- **傻瓜设备**（如新总线设备）：新增 Adapter → 向 ProtocolGateway 注册 → ServiceMgr 配置过滤规则。业务层零修改。
 
 ### 7.2 跨生态编排
 
@@ -411,6 +418,12 @@ AutomationBus 作为规则引擎，不感知底层协议。一个规则可同时
 | 仅业务层支持多实例 | 采用 | 会话层 I/O 密集不占 CPU，服务层瓶颈在外部设备 |
 | 应用层消息确认重传 | 废弃 | Actor 崩溃不应是常态，根因应在代码质量与测试中消除 |
 | 消息体持久化缓存 | 废弃 | 仅用于配合重传，重传不做则无意义 |
+| Service 层按设备自治能力分流 | 采用 | 智能设备自带过滤走 ServiceGateway，傻瓜设备需系统主动管教走 ProtocolGateway |
+| ServiceGateway 与 ProtocolGateway 平级 | 采用 | 两者都是入口，复杂度不同但地位相同 |
+| AiApiSvc / MiHomeSvc / DeviceGateway 取消 | 采用 | Adapter → Gateway → Router 直达 Business EO，不需要中间 EO |
+| DataManager 放在 Business 层 | 采用 | 跨层写 Context 破坏分层隔离，同层内读写是自然的架构约束 |
+| Session Layer C 面重 D 面轻 | 采用 | "会话"是控制面概念；D 面剥离杂活供 Mgr 专注决策 |
+| 所有流都携带 GTID | 采用 | 无归属则无法暂停/调频/查历史 |
 
 完整决策分析记录在 `docs/adr/` 目录下。
 
@@ -430,34 +443,35 @@ flowHub/
 │   ├── utils/                      <- 工具
 │   │
 │   ├── access/                     <- 接入层（不分面）
-│   │   ├── access_gateway.hpp / cpp
-│   │   ├── cli_adapter.hpp / cpp
-│   │   ├── ws_adapter.hpp / cpp    （未来）
+│   │   ├── AccessGateway.hpp / cpp
+│   │   ├── CliAdapter.hpp / cpp
+│   │   ├── WsAdapter.hpp / cpp    （未来）
 │   │   └── CMakeLists.txt
 │   │
 │   ├── CPlane/                     <- 控制面
-│   │   ├── session_mgr.hpp / cpp
-│   │   ├── business_mgr.hpp / cpp
-│   │   ├── service_mgr.hpp / cpp
+│   │   ├── SessionMgr.hpp / cpp
+│   │   ├── BusinessMgr.hpp / cpp
+│   │   ├── ServiceMgr.hpp / cpp
 │   │   └── CMakeLists.txt
 │   │
 │   ├── DPlane/                     <- 数据面
 │   │   ├── session/
-│   │   │   ├── session_data.hpp / cpp
+│   │   │   ├── SessionData.hpp / cpp
 │   │   │   └── CMakeLists.txt
 │   │   │
 │   │   ├── business/
-│   │   │   ├── router.hpp / cpp
-│   │   │   ├── ai_chat_bus.hpp / cpp
-│   │   │   ├── automation_bus.hpp / cpp
+│   │   │   ├── Router.hpp / cpp
+│   │   │   ├── AiChatBus.hpp / cpp
+│   │   │   ├── AutomationBus.hpp / cpp
+│   │   │   ├── DataManager.hpp / cpp
 │   │   │   └── CMakeLists.txt
 │   │   │
 │   │   └── service/
-│   │       ├── ai_api_svc.hpp / cpp
-│   │       ├── mi_home_svc.hpp / cpp
-│   │       ├── device_gateway.hpp / cpp
-│   │       ├── ai_api_adapter.hpp / cpp
-│   │       ├── mi_home_adapter.hpp / cpp
+│   │       ├── ServiceGateway.hpp / cpp
+│   │       ├── ProtocolGateway.hpp / cpp
+│   │       ├── AiApiAdapter.hpp / cpp
+│   │       ├── MqttAdapter.hpp / cpp
+│   │       ├── CanAdapter.hpp / cpp        （预留）
 │   │       └── CMakeLists.txt
 │   │
 │   └── main.cpp
@@ -491,9 +505,10 @@ flowHub/
 | 会话层数据面（D-Plane） | `功能 + Data` | SessionData |
 | 业务层数据面（D-Plane） | `功能 + Bus` | AiChatBus, AutomationBus, SceneBus |
 | 业务层路由 | `Router` | 固定名称 |
-| 服务层业务 EO（D-Plane） | `功能 + Svc` | AIAPISvc, MiHomeSvc |
-| 服务层设备网关 | `DeviceGateway` | 固定名称 |
-| 协议适配器 | `协议 + Adapter` | CLIAdapter, WsAdapter, MiHomeAdapter |
+| 业务层数据管理 | `DataManager` | 固定名称 |
+| 服务层智能设备入口 | `ServiceGateway` | 固定名称 |
+| 服务层傻瓜设备入口 | `ProtocolGateway` | 固定名称 |
+| 协议适配器 | `协议 + Adapter` | CLIAdapter, WsAdapter, MqttAdapter, AiApiAdapter |
 | 接入层网关 | `AccessGateway` | 固定名称 |
 
 ---

@@ -8,5 +8,6 @@ AllowShortFunctionsOnASingleLine: Empty
 ColumnLimit: 100
 AlignConsecutiveAssignments: false
 SortIncludes: CaseInsensitive
+AlwaysBreakTemplateDeclarations: Yes
 ...
 
