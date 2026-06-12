@@ -3,13 +3,13 @@
 
 #pragma once
 
-#include "fw/ActorBase.hpp"
+#include "fw/EoBase.hpp"
 #include "utils/Result.hpp"
 
 namespace CPlane
 {
 
-class BusinessMgr : public fw::ActorBase<BusinessMgr>
+class BusinessMgr : public fw::EoBase<BusinessMgr>
 {
   public:
     explicit BusinessMgr(fw::ActorConfig &cfg);

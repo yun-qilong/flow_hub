@@ -20,10 +20,10 @@ namespace fw
 {
 
 template <typename Derived>
-class ActorBase : public caf::event_based_actor, public utils::CrtpBase<Derived>
+class EoBase : public caf::event_based_actor, public utils::CrtpBase<Derived>
 {
   public:
-    explicit ActorBase(ActorConfig &cfg) : caf::event_based_actor(cfg) {}
+    explicit EoBase(ActorConfig &cfg) : caf::event_based_actor(cfg) {}
 
   protected:
     // ----- message handler registration -------------------------------

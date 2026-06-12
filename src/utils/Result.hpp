@@ -9,6 +9,7 @@
 #include "common/Macros.hpp"
 
 #include <optional>
+#include <type_traits>
 #include <utility>
 
 namespace utils
@@ -35,8 +36,7 @@ class Result
     // 有值时调用 onValue，无值时调用 onEmpty。
     // 两个 lambda 的返回值类型必须一致。
     template <typename FnValue, typename FnEmpty>
-    [[nodiscard]] auto useOrFailed(FnValue &&onValue, FnEmpty &&onEmpty)
-        -> decltype(onValue(std::declval<T &>()))
+    [[nodiscard]] std::invoke_result_t<FnValue, T &> useOrFailed(FnValue &&onValue, FnEmpty &&onEmpty)
     {
         if (FH_LIKELY(data_))
         {
@@ -49,8 +49,7 @@ class Result
     }
 
     template <typename FnValue, typename FnEmpty>
-    [[nodiscard]] auto useOrFailed(FnValue &&onValue, FnEmpty &&onEmpty) const
-        -> decltype(onValue(std::declval<const T &>()))
+    [[nodiscard]] std::invoke_result_t<FnValue, const T &> useOrFailed(FnValue &&onValue, FnEmpty &&onEmpty) const
     {
         if (FH_LIKELY(data_))
         {
@@ -86,8 +85,7 @@ class Result<T &>
 
     // ----- branching -------------------------------------------------
     template <typename FnValue, typename FnEmpty>
-    [[nodiscard]] auto useOrFailed(FnValue &&onValue, FnEmpty &&onEmpty)
-        -> decltype(onValue(std::declval<T &>()))
+    [[nodiscard]] std::invoke_result_t<FnValue, T &> useOrFailed(FnValue &&onValue, FnEmpty &&onEmpty)
     {
         if (FH_LIKELY(ptr_))
         {
@@ -100,8 +98,7 @@ class Result<T &>
     }
 
     template <typename FnValue, typename FnEmpty>
-    [[nodiscard]] auto useOrFailed(FnValue &&onValue, FnEmpty &&onEmpty) const
-        -> decltype(onValue(std::declval<const T &>()))
+    [[nodiscard]] std::invoke_result_t<FnValue, const T &> useOrFailed(FnValue &&onValue, FnEmpty &&onEmpty) const
     {
         if (FH_LIKELY(ptr_))
         {

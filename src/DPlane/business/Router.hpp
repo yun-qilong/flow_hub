@@ -3,12 +3,12 @@
 
 #pragma once
 
-#include "fw/ActorBase.hpp"
+#include "fw/EoBase.hpp"
 
 namespace DPlane::business
 {
 
-class Router : public fw::ActorBase<Router>
+class Router : public fw::EoBase<Router>
 {
   public:
     explicit Router(fw::ActorConfig &cfg);
