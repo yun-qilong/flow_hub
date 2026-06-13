@@ -160,13 +160,21 @@ def parse_mt(filepath: Path, src_root: Path, mt_hpp_map: dict[str, str]) -> list
 
             # non-indented → directive or new definition
             if not line.startswith((" ", "\t")):
-                # include directive
-                inc_m = re.match(r"^include\s+(\S+)$", line)
+                # include directive:  "include path/to/file.mt"  or  include "file.mt"
+                inc_m = re.match(r'^include\s+(.+)$', line)
                 if inc_m:
-                    inc_rel = inc_m.group(1)
-                    inc_path = src_root / inc_rel
-                    # Resolve using the mapping for correct case
-                    hpp = mt_hpp_map.get(inc_rel, mt_rel_to_hpp_fallback(inc_rel))
+                    inc_raw = inc_m.group(1).strip()
+                    # 去掉可选引号
+                    inc_rel = inc_raw.strip('"')
+                    # 相对路径 → 相对于当前 .mt 文件所在目录解析
+                    inc_path = (filepath.parent / inc_rel).resolve()
+                    try:
+                        inc_key = str(inc_path.relative_to(src_root))
+                    except ValueError:
+                        print(f"WARNING: {filepath}:{lineno}: "
+                              f"include '{inc_rel}' not under src_root")
+                        continue
+                    hpp = mt_hpp_map.get(inc_key, mt_rel_to_hpp_fallback(inc_key))
                     includes.append(hpp)
                     # Pull in define statements from the included file
                     for name, entry in parse_defines(inc_path).items():
@@ -266,29 +274,36 @@ def resolve_cpp_type(mt_type: str) -> str:
     return TYPE_MAP.get(mt_type, (mt_type, ""))[0]
 
 
-def field_includes(fields: list) -> list[str]:
-    """Collect #include lines needed by field types."""
+def field_includes(fields: list, known_types: dict[str, str] | None = None) -> list[str]:
+    """Collect #include lines needed by field types (standard types only)."""
     incs: set[str] = set()
     for ftype, _ in fields:
         if ftype == "__padding__":
             continue
-        incs.add("<array>") if ARRAY_RE.match(ftype) else None
+        if ARRAY_RE.match(ftype):
+            incs.add("<array>")
         base = ARRAY_RE.match(ftype).group(1) if ARRAY_RE.match(ftype) else ftype
+        # 自定义类型通过 mt 的 include 指令手动引入，此处不自动探测
         inc = TYPE_MAP.get(base, ("", ""))[1]
         if inc:
             incs.add(inc)
     return sorted(incs)
 
 
-def _to_string_scalar(mt_type: str, access_expr: str) -> str:
+def _to_string_scalar(mt_type: str, access_expr: str,
+                     known_types: dict[str, str] | None = None) -> str:
     if mt_type == "string":
         return access_expr
     if mt_type == "bool":
-        return f'({access_expr} ? "true" : "false")'
+        return f'({access_expr} ? std::string{{"true"}} : std::string{{"false"}})'
+    # 自定义类型（.mt 定义的 struct/context），调其 to_string()
+    if known_types and mt_type in known_types:
+        return f"{access_expr}.to_string()"
     return f"std::to_string({access_expr})"
 
 
-def gen_to_string_body(fields: list) -> list[str]:
+def gen_to_string_body(fields: list,
+                       known_types: dict[str, str] | None = None) -> list[str]:
     lines = ['        std::string result;']
     real = [(t, n) for t, n in fields if t != "__padding__"]
     if not real:
@@ -303,13 +318,16 @@ def gen_to_string_body(fields: list) -> list[str]:
             lines.append(f'        result += "{fname}=[";')
             lines.append(f'        for (size_t i = 0; i < {size}; ++i) {{')
             lines.append(f'            if (i > 0) result += ", ";')
-            lines.append(f'            result += {_to_string_scalar(base, fname + "[i]")};')
+            lines.append(
+                f'            result += '
+                f'{_to_string_scalar(base, fname + "[i]", known_types)};'
+            )
             lines.append(f'        }}')
             lines.append(f'        result += "]{comma} ";')
         else:
             lines.append(
                 f'        result += "{fname}=" + '
-                f'{_to_string_scalar(ftype, fname)} + "{comma} ";'
+                f'{_to_string_scalar(ftype, fname, known_types)} + "{comma} ";'
             )
     lines.append('        return result;')
     return lines
@@ -317,7 +335,8 @@ def gen_to_string_body(fields: list) -> list[str]:
 
 # ---- codegen: message --------------------------------------------------
 
-def generate_message_hpp(defn: dict) -> str:
+def generate_message_hpp(defn: dict,
+                         known_types: dict[str, str] | None = None) -> str:
     name = defn["name"]
     fields = defn["fields"]
     field_names = [fn for _, fn in fields]
@@ -330,7 +349,7 @@ def generate_message_hpp(defn: dict) -> str:
     out.append('#include "caf/all.hpp"')
     for inc in defn.get("includes", []):
         out.append(f'#include "{inc}"')
-    for inc in field_includes(fields):
+    for inc in field_includes(fields, known_types):
         out.append(f"#include {inc}")
     out.append("")
     out.append("namespace common::message")
@@ -377,7 +396,8 @@ def generate_messages_hpp(message_names: list[str]) -> str:
 
 # ---- codegen: context / struct -----------------------------------------
 
-def generate_context_hpp(defn: dict) -> str:
+def generate_context_hpp(defn: dict,
+                         known_types: dict[str, str] | None = None) -> str:
     name = defn["name"]
     kind = defn["kind"]  # "context" | "struct"
     fields = defn["fields"]
@@ -391,7 +411,7 @@ def generate_context_hpp(defn: dict) -> str:
     incs: set[str] = set()
     for inc in defn.get("includes", []):
         incs.add(inc)
-    for inc in field_includes(fields):
+    for inc in field_includes(fields, known_types):
         incs.add(inc)
     incs.add("<string>")  # for to_string()
     for inc in sorted(incs):
@@ -429,8 +449,22 @@ def generate_context_hpp(defn: dict) -> str:
     out.append("")
     out.append(f"    std::string to_string() const")
     out.append(f"    {{")
-    for line in gen_to_string_body(fields):
+    for line in gen_to_string_body(fields, known_types):
         out.append(line)
+    out.append(f"    }}")
+    out.append("")
+
+    # ---- clear(): reset all fields — nested structs call their own clear()
+    out.append(f"    void clear()")
+    out.append(f"    {{")
+    for ftype, fname in fields:
+        if ftype == "__padding__":
+            continue
+        # 自定义类型（.mt 定义的 struct/context），调其 clear() 实现级联
+        if known_types and ftype in known_types:
+            out.append(f"        {fname}.clear();")
+        else:
+            out.append(f"        {fname} = {{}};")
     out.append(f"    }}")
 
     out.append("};")
@@ -507,6 +541,18 @@ def main() -> int:
             all_contexts.extend(defs)
             print(f"  context/{mtf.name}: {len(defs)} definition(s)")
 
+    # ---- Pass 3: build known-types map for cross-references ----------
+    # Maps type-name → #include-path (no quotes, e.g. generated/context/DeviceInfo.hpp)
+    known_types: dict[str, str] = {}
+    for ctx in all_contexts:
+        mt_rel = str(Path(ctx["file"]).relative_to(src_root))
+        hpp_rel = mt_hpp_map.get(mt_rel, mt_rel_to_hpp_fallback(mt_rel))
+        known_types[ctx["name"]] = hpp_rel
+    for msg in all_messages:
+        mt_rel = str(Path(msg["file"]).relative_to(src_root))
+        hpp_rel = mt_hpp_map.get(mt_rel, mt_rel_to_hpp_fallback(mt_rel))
+        known_types[msg["name"]] = hpp_rel
+
     # ---- Generate ----------------------------------------------------
 
     # 3. Types.hpp
@@ -521,7 +567,7 @@ def main() -> int:
         gen_msg_dir.mkdir(parents=True, exist_ok=True)
         for msg in all_messages:
             path = gen_msg_dir / f"{msg['name']}.hpp"
-            path.write_text(generate_message_hpp(msg))
+            path.write_text(generate_message_hpp(msg, known_types))
             print(f"  wrote {path}")
 
         msg_names = [m["name"] for m in all_messages if m["kind"] == "message"]
@@ -535,7 +581,7 @@ def main() -> int:
         for ctx in all_contexts:
             out_name = ctx["name"]
             path = gen_ctx_dir / f"{out_name}.hpp"
-            path.write_text(generate_context_hpp(ctx))
+            path.write_text(generate_context_hpp(ctx, known_types))
             print(f"  wrote {path}")
 
         context_names = [c["name"] for c in all_contexts if c["kind"] == "context"]

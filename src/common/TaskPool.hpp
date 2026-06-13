@@ -11,12 +11,12 @@
 
 #pragma once
 
+#include "ContextManager.hpp"
 #include "generated/context/AiChatContext.hpp"
 #include "generated/TaskType.hpp"
 #include "generated/Types.hpp"
 #include "utils/Result.hpp"
 
-#include <array>
 #include <cstddef>
 #include <cstdint>
 
@@ -52,7 +52,7 @@ class TaskPool
     static constexpr TaskType getType(GTID gtid);
     static constexpr uint8_t getIndex(GTID gtid);
 
-    // 每种 TaskType 一个 std::array + 位图管理空闲位置
+    ContextManager<context::AiChatContext, kIndexCount> aiChatContexts_;
 };
 
 } // namespace common
