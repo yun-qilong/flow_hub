@@ -1,3 +1,5 @@
+include "context/ConfigEntry.mt"
+
 context AiChatContext
     string conversationId
     int32 turnCount
@@ -6,3 +8,4 @@ context AiChatContext
     double temperature
     cacheLinePadding
     int64 lastActiveTime
+    ConfigEntry configEntry

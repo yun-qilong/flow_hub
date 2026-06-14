@@ -171,6 +171,62 @@ class Router : public fw::EoBase<Router>
 
 ---
 
+## 修订三（2026-06-14）：按目录约定 Context 的 GTID Category
+
+### 修订动机
+
+`TaskType` 枚举值编码了 `(Category << 6) | subType`（见 ADR-0008 修订），但 `.mt` 定义文件中没有声明所属 Category。需要一种机制让脚本自动知道某个 Context 属于哪个 Category。
+
+### 决策：目录即分类
+
+在 `src/common/context/` 下新增三个子目录，**目录名即 Category**：
+
+```
+src/common/context/
+├── ConfigEntry.mt          ← 共享 struct（无 Category）
+├── DeviceInfo.mt           ← 共享 struct（无 Category）
+├── systemContext/          ← Category = System (0x0)
+│   └── ServiceContext.mt
+├── userContext/            ← Category = User   (0x7)
+│   ├── AiChatContext.mt
+│   └── SomeStruct.mt        ← 仅 User 分类使用的 struct
+└── otherContext/           ← Category = Other  (0xC)
+    └── SessionContext.mt
+```
+
+- **`context` 类型的 `.mt` 必须放在 `xxxContext/` 子目录中**（tidy 将检查此项）
+- **`struct` 类型**：与某个 Category 绑定的 struct 放在对应的 `xxxContext/` 下；跨 Category 共用的 struct 放在 `context/` 根目录
+- `gen_code.py` 根据 `.mt` 文件所在目录自动分配 Category，生成带 Category 编码的 `TaskType` 枚举值
+
+> **注意**：`.mt` 文件的目录路径**仅用于区分 Category 分类**，不影响生成文件的输出路径。所有 `context/` 下的 `.mt`（含子目录）生成的头文件统一输出到 `generated/context/` 平级目录中。例如 `otherContext/DeviceInfo.mt` → `generated/context/DeviceInfo.hpp`。
+
+### Include 规则
+
+| include 写法 | 解析位置 | 用途 |
+|-------------|---------|------|
+| `include "xxx.mt"` | 当前 `.mt` 文件所在目录 | 同目录下的 struct 或 context |
+| `include "context/xxx.mt"` | `src/common/context/` | 跨目录引用公共 struct |
+
+示例：`otherContext/SessionContext.mt` 引用同目录的 `DeviceInfo`（Category 专属 struct），或引用公共 `ConfigEntry`（跨目录）：
+
+```
+include "DeviceInfo.mt"          ← 同目录引用
+
+context SessionContext
+    DeviceInfo deviceInfo
+    ...
+```
+
+```
+include "context/ConfigEntry.mt" ← 跨目录引用公共 struct
+
+context SomeContext
+    ConfigEntry config
+    ...
+```
+
+---
+
 ## 备选方案
 
 | 方案 | 否决原因 |
@@ -189,6 +245,7 @@ class Router : public fw::EoBase<Router>
 | 2026-06-12 | 初版决策：EO 模板参数为 `ContextType`（类型参数），直接绑定 Context 类 |
 | 2026-06-14 | 修订一：改为 `TaskType`（非类型模板参数），通过 `TaskTypeTraits` 编译期推导 `ContextType`。目的：与消息、GTID、SessionMgr 中的 TaskType 统一全链路标识，消除概念断裂。新增 `generated/TaskTypeTraits.hpp` 由 `gen_code.py` 自动生成 |
 | 2026-06-14 | 修订二：明确 `TaskType` 为可选参数——仅 Business 层 EO 需要声明，其他层 EO（SessionMgr、Router 等）保持普通 CRTP。`EoBase` 始终不感知此参数 |
+| 2026-06-14 | 修订三：Context `.mt` 文件按目录分类（`systemContext/` / `userContext/` / `otherContext/`），`gen_code.py` 根据目录自动分配 GTID Category。`TaskType` 枚举值编码 `(Category << 6) | subType`，不同 Category 可复用 subType 号。新增 include 规则：`include "context/xxx.mt"` 跨目录引用公共 struct |
 
 ## 影响
 
@@ -196,7 +253,11 @@ class Router : public fw::EoBase<Router>
 - `EoBase` 无需修改——它始终只接受 `Derived` 一个模板参数
 - `TaskTypeTraits.hpp` 由脚本生成，新增 context 无需手动维护映射
 - `TaskPool::getContext` 的模板参数仍为 ContextType，由 Business 层 EO 内部通过 `ContextTypeOf<T>` 推导
+- Context `.mt` 文件必须放在对应 Category 子目录下（`systemContext/` / `userContext/` / `otherContext/`）
+- 与 Category 绑定的 struct `.mt` 可放在对应的 `xxxContext/` 下，跨 Category 共用的 struct 放在 `context/` 根目录，通过 `include "context/xxx.mt"` 跨目录引用
+- tidy 规则仅检查 `context` 类型必须在 `xxxContext/` 子目录中，不约束 `struct` 位置
 
 ## 待办
 
 - [ ] 添加 clang-tidy 规则：约束 `getContext<ContextType>` 调用处的 `ContextType` 必须等于 `ContextTypeOf<当前EO的TaskType>`，禁止手动指定其他类型绕过规则
+- [ ] 添加 tidy 规则：检查 `context` 类型 `.mt` 文件必须位于 `xxxContext/` 子目录中

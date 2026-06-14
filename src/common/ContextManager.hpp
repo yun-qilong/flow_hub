@@ -37,11 +37,15 @@ class ContextManager
 
     [[nodiscard]] int allocate() noexcept;
 
-    // 回收 slot
     void deallocate(int idx) noexcept;
 
     [[nodiscard]] Ctx &get(int idx) noexcept;
     [[nodiscard]] const Ctx &getRead(int idx) const noexcept;
+
+    [[nodiscard]] int countFree() const noexcept
+    {
+        return bitmap_.countFree();
+    }
 
   private:
     StaticBitMap<Capacity> bitmap_;

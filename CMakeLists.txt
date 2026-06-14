@@ -28,21 +28,19 @@ if(FLOWHUB_BUILD_TESTS)
 endif()
 
 # ---- 代码生成 ----------------------------------------------------
+# 自动收集所有 .mt 文件，新增 .mt 无需手动注册
+file(GLOB_RECURSE MT_SOURCES CONFIGURE_DEPENDS
+    ${CMAKE_SOURCE_DIR}/src/common/type/*.mt
+    ${CMAKE_SOURCE_DIR}/src/common/message/*.mt
+    ${CMAKE_SOURCE_DIR}/src/common/context/*.mt
+)
+
 add_custom_command(
     OUTPUT ${CMAKE_SOURCE_DIR}/src/generated/message/Messages.hpp
     COMMAND python3 ${CMAKE_SOURCE_DIR}/scripts/gen_code.py
     DEPENDS
         ${CMAKE_SOURCE_DIR}/scripts/gen_code.py
-        ${CMAKE_SOURCE_DIR}/src/common/type/types.mt
-        ${CMAKE_SOURCE_DIR}/src/common/message/internalPing.mt
-        ${CMAKE_SOURCE_DIR}/src/common/message/internalPong.mt
-        ${CMAKE_SOURCE_DIR}/src/common/message/modifyReq.mt
-        ${CMAKE_SOURCE_DIR}/src/common/message/dataStruct.mt
-        ${CMAKE_SOURCE_DIR}/src/common/context/AiChatContext.mt
-        ${CMAKE_SOURCE_DIR}/src/common/context/ConfigEntry.mt
-        ${CMAKE_SOURCE_DIR}/src/common/context/DeviceInfo.mt
-        ${CMAKE_SOURCE_DIR}/src/common/context/ServiceContext.mt
-        ${CMAKE_SOURCE_DIR}/src/common/context/SessionContext.mt
+        ${MT_SOURCES}
     WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
     COMMENT "Generating C++ headers from .mt files"
 )

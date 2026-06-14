@@ -7,7 +7,10 @@ Usage:  python3 scripts/gen_code.py
 Reads:
   src/common/type/*.mt       → define Name = baseType  (type aliases)
   src/common/message/*.mt    → message Name / struct Name  (CAF messages)
-  src/common/context/*.mt    → context Name / struct Name  (context classes)
+  src/common/context/*.mt    → shared struct definitions (no category)
+  src/common/context/systemContext/*.mt  → System-category contexts
+  src/common/context/userContext/*.mt    → User-category contexts
+  src/common/context/otherContext/*.mt   → Other-category contexts
 
 Writes:
   src/generated/Types.hpp                        (type aliases)
@@ -15,11 +18,12 @@ Writes:
   src/generated/message/Messages.hpp             (CAF registry)
   src/generated/context/<Name>Context.hpp        (one per context)
   src/generated/context/<Name>.hpp               (one per struct in context/)
-  src/generated/TaskType.hpp                    (context enum)
+  src/generated/TaskType.hpp                    (context enum, category-encoded)
 
 .mt syntax:
   # comment
-  include path/to/file.mt    ← #include the matching generated .hpp, resolve defines
+  include path/to/file.mt    ← same-directory include (relative to current .mt)
+  include context/File.mt    ← shared struct under common/context/ (cross-category)
 
   define <Name> = <type>     ← using Name = cpp_type;  (type/ dir only)
 
@@ -64,6 +68,29 @@ TYPE_MAP = {
 }
 
 ARRAY_RE = re.compile(r"^(\w+)\[(\d+)\]$")
+
+# ---- category detection ------------------------------------------------
+# Maps context subdirectory name → GTID Category field value (ADR-0008)
+CATEGORY_DIRS = {
+    "systemContext": 0x0,
+    "userContext":   0x7,
+    "otherContext":  0xC,
+}
+
+
+def get_category_for_mt(filepath: Path, src_root: Path) -> int | None:
+    """Return GTID Category value if this .mt lives in a category subdirectory
+    under common/context/, otherwise None (shared struct / other dir)."""
+    try:
+        rel = filepath.relative_to(src_root)
+    except ValueError:
+        return None
+    parts = rel.parts
+    # common/context/<categoryDir>/<Name>.mt
+    if len(parts) >= 4 and parts[0] == "common" and parts[1] == "context":
+        cat_dir = parts[2]
+        return CATEGORY_DIRS.get(cat_dir)
+    return None
 
 
 # ---- include / define helpers ------------------------------------------
@@ -120,7 +147,9 @@ def build_mt_hpp_map(src_root: Path) -> dict[str, str]:
         d = src_root / sub
         if not d.exists():
             continue
-        for mtf in sorted(d.glob("*.mt")):
+        # context/ uses rglob to pick up files in category subdirectories
+        glob_fn = d.rglob if sub == "common/context" else d.glob
+        for mtf in sorted(glob_fn("*.mt")):
             name, kind = _discover_def_name(mtf)
             if name is None:
                 continue
@@ -132,9 +161,13 @@ def build_mt_hpp_map(src_root: Path) -> dict[str, str]:
                 hpp_rel = f"generated/context/{name}.hpp"
             elif kind == "message":
                 hpp_rel = f"generated/message/{name}.hpp"
-            else:  # struct — depends on directory
-                dir_name = mtf.parent.name  # "message" or "context"
-                hpp_rel = f"generated/{dir_name}/{name}.hpp"
+            else:  # struct — generated output goes under message/ or context/
+                # Determine the top-level category: "message" or "context"
+                # (structs in context subdirectories still output to generated/context/)
+                rel_parts = mtf.relative_to(src_root).parts
+                # rel_parts like ("common", "message", "Foo.mt") or ("common", "context", ..., "Bar.mt")
+                out_dir = rel_parts[1] if len(rel_parts) >= 2 else mtf.parent.name
+                hpp_rel = f"generated/{out_dir}/{name}.hpp"
 
             mapping[mt_rel] = hpp_rel
     return mapping
@@ -166,8 +199,12 @@ def parse_mt(filepath: Path, src_root: Path, mt_hpp_map: dict[str, str]) -> list
                     inc_raw = inc_m.group(1).strip()
                     # 去掉可选引号
                     inc_rel = inc_raw.strip('"')
-                    # 相对路径 → 相对于当前 .mt 文件所在目录解析
-                    inc_path = (filepath.parent / inc_rel).resolve()
+                    # 路径以 context/ message/ type/ 开头 → 从 src/common/ 解析（共享定义）
+                    # 否则 → 从当前 .mt 文件所在目录解析（同目录引用）
+                    if inc_rel.startswith(("context/", "message/", "type/")):
+                        inc_path = (src_root / "common" / inc_rel).resolve()
+                    else:
+                        inc_path = (filepath.parent / inc_rel).resolve()
                     try:
                         inc_key = str(inc_path.relative_to(src_root))
                     except ValueError:
@@ -195,6 +232,9 @@ def parse_mt(filepath: Path, src_root: Path, mt_hpp_map: dict[str, str]) -> list
                     "file": str(filepath),
                     "includes": list(includes),
                 }
+                # 仅 context 类型检测所属 Category
+                if current["kind"] == "context":
+                    current["category"] = get_category_for_mt(filepath, src_root)
                 continue
 
             # indented → field or directive inside current block
@@ -474,9 +514,25 @@ def generate_context_hpp(defn: dict,
     return "\n".join(out)
 
 
-def generate_business_type_hpp(context_names: list[str]) -> str:
+def generate_business_type_hpp(contexts: list[dict]) -> str:
+    """Generate TaskType.hpp with category-encoded values.
+
+    Each context dict has 'name' (str) and 'category' (int, GTID Category field).
+    TaskType value = (Category << 6) | subType, so that:
+      GTID = (TaskType << 6) | index
+      extractTaskType(gtid) = gtid >> 6
+    This layout makes TaskType bits directly mirror GTID upper 10 bits.
+    subType is assigned sequentially (0, 1, 2...) within each category (sorted by name).
+    """
+    from collections import defaultdict
+
     out: list[str] = []
     out.append("// Auto-generated by gen_code.py — DO NOT EDIT")
+    out.append("//")
+    out.append("// TaskType enum values encode both Category and subType:")
+    out.append("//   value = (Category << 6) | subType")
+    out.append("// So GTID = (TaskType << 6) | index, extractTaskType = gtid >> 6.")
+    out.append("// Category (4 bits) at [9:6], subType (6 bits) at [5:0].")
     out.append("")
     out.append("#pragma once")
     out.append("")
@@ -485,16 +541,38 @@ def generate_business_type_hpp(context_names: list[str]) -> str:
     out.append("namespace common")
     out.append("{")
     out.append("")
-    out.append("enum class TaskType : uint8_t")
-    out.append("{")
-    if context_names:
-        for i, n in enumerate(context_names):
-            short = n.removesuffix("Context") if n.endswith("Context") else n
-            comma = "," if i < len(context_names) - 1 else ""
-            out.append(f"    {short}{comma}")
-    else:
+
+    if not contexts:
+        out.append("enum class TaskType : uint16_t")
+        out.append("{")
         out.append("    // (no context types defined)")
-    out.append("};")
+        out.append("};")
+    else:
+        # Group by category, sort within each group for deterministic subType assignment
+        by_cat: dict[int, list[str]] = defaultdict(list)
+        for ctx in contexts:
+            cat = ctx.get("category")
+            if cat is None:
+                print(f"WARNING: context '{ctx['name']}' has no category — skipping")
+                continue
+            by_cat[cat].append(ctx["name"])
+
+        # Build ordered list of (short_name, enum_value, category, subType)
+        task_types: list[tuple[str, int, int, int]] = []
+        for cat in sorted(by_cat.keys()):
+            names = sorted(by_cat[cat])
+            for sub_idx, name in enumerate(names):
+                short = name.removesuffix("Context") if name.endswith("Context") else name
+                value = (cat << 6) | sub_idx
+                task_types.append((short, value, cat, sub_idx))
+
+        out.append("enum class TaskType : uint16_t")
+        out.append("{")
+        for i, (short, val, cat, sub) in enumerate(task_types):
+            comma = "," if i < len(task_types) - 1 else ""
+            out.append(f"    {short} = 0x{val:04X}{comma}  // cat=0x{cat:X} sub={sub}")
+        out.append("};")
+
     out.append("")
     out.append("} // namespace common")
     out.append("")
@@ -545,6 +623,116 @@ def generate_task_type_traits_hpp(context_names: list[str]) -> str:
     return "\n".join(out)
 
 
+def generate_task_pool_types_hpp(context_names: list[str]) -> str:
+    """Generate TaskPoolTypes.hpp — ContextManager tuple + reverse mapping + dispatch helpers.
+
+    Produces:
+      ContextToTaskType<Ctx>           — reverse: context class → TaskType enum
+      kTaskTypeCount                   — number of task types
+      ContextManagerTuple              — std::tuple<ContextManager<Ctx, 64>...>
+      detail::allocateInTuple()        — runtime dispatch helper for allocate
+      detail::deallocateInTuple()      — runtime dispatch helper for deallocate
+      detail::availableInTuple()       — runtime dispatch helper for available
+    """
+    out: list[str] = []
+    out.append("// Auto-generated by gen_code.py — DO NOT EDIT")
+    out.append("//")
+    out.append("// TaskPool support types: ContextManager tuple + runtime dispatch helpers.")
+    out.append("")
+    out.append("#pragma once")
+    out.append("")
+    out.append('#include "generated/TaskType.hpp"')
+    out.append('#include "generated/TaskTypeTraits.hpp"')
+    out.append('#include "common/ContextManager.hpp"')
+    out.append("")
+    out.append("#include <cstddef>")
+    out.append("#include <tuple>")
+    out.append("")
+    out.append("namespace common")
+    out.append("{")
+    out.append("")
+
+    # --- Reverse mapping: ContextType → TaskType ---
+    out.append("// Reverse mapping: context class → TaskType enum value")
+    out.append("template <typename Ctx>")
+    out.append("struct ContextToTaskType;")
+    out.append("")
+    for n in context_names:
+        short = n.removesuffix("Context") if n.endswith("Context") else n
+        out.append(f"template <>")
+        out.append(f"struct ContextToTaskType<context::{n}>")
+        out.append(f"{{")
+        out.append(f"    static constexpr TaskType kValue = TaskType::{short};")
+        out.append(f"}};")
+        out.append("")
+
+    # --- kTaskTypeCount ---
+    out.append(f"constexpr size_t kTaskTypeCount = {len(context_names)};")
+    out.append("")
+
+    # --- ContextManagerTuple ---
+    out.append("// Tuple of ContextManagers, one per TaskType (accessed via std::get<ContextManager<Ctx, 64>>)")
+    out.append("using ContextManagerTuple = std::tuple<")
+    for i, n in enumerate(context_names):
+        comma = "," if i < len(context_names) - 1 else ""
+        out.append(f"    ContextManager<context::{n}, 64>{comma}")
+    out.append(">;")
+    out.append("")
+
+    # --- Runtime dispatch helpers ---
+    out.append("namespace detail")
+    out.append("{")
+    out.append("")
+
+    # allocateInTuple
+    out.append("template <typename Tuple>")
+    out.append("inline int allocateInTuple(TaskType type, Tuple& managers)")
+    out.append("{")
+    out.append("    switch (type)")
+    out.append("    {")
+    for i, n in enumerate(context_names):
+        short = n.removesuffix("Context") if n.endswith("Context") else n
+        out.append(f"        case TaskType::{short}: return std::get<{i}>(managers).allocate();")
+    out.append("        default: return -1;")
+    out.append("    }")
+    out.append("}")
+    out.append("")
+
+    # deallocateInTuple
+    out.append("template <typename Tuple>")
+    out.append("inline void deallocateInTuple(TaskType type, Tuple& managers, int idx)")
+    out.append("{")
+    out.append("    switch (type)")
+    out.append("    {")
+    for i, n in enumerate(context_names):
+        short = n.removesuffix("Context") if n.endswith("Context") else n
+        out.append(f"        case TaskType::{short}: std::get<{i}>(managers).deallocate(idx); break;")
+    out.append("        default: break;")
+    out.append("    }")
+    out.append("}")
+    out.append("")
+
+    # availableInTuple
+    out.append("template <typename Tuple>")
+    out.append("inline size_t availableInTuple(TaskType type, const Tuple& managers)")
+    out.append("{")
+    out.append("    switch (type)")
+    out.append("    {")
+    for i, n in enumerate(context_names):
+        short = n.removesuffix("Context") if n.endswith("Context") else n
+        out.append(f"        case TaskType::{short}: return static_cast<size_t>(std::get<{i}>(managers).countFree());")
+    out.append("        default: return 0;")
+    out.append("    }")
+    out.append("}")
+    out.append("")
+
+    out.append("} // namespace detail")
+    out.append("")
+    out.append("} // namespace common")
+    out.append("")
+    return "\n".join(out)
+
+
 # ---- main -------------------------------------------------------------
 
 def main() -> int:
@@ -577,13 +765,14 @@ def main() -> int:
             all_messages.extend(defs)
             print(f"  message/{mtf.name}: {len(defs)} definition(s)")
 
-    # 2c. Parse context/
+    # 2c. Parse context/ (including category subdirectories)
     all_contexts: list[dict] = []
     if ctx_dir.exists():
-        for mtf in sorted(ctx_dir.glob("*.mt")):
+        for mtf in sorted(ctx_dir.rglob("*.mt")):
             defs = parse_mt(mtf, src_root, mt_hpp_map)
             all_contexts.extend(defs)
-            print(f"  context/{mtf.name}: {len(defs)} definition(s)")
+            rel = mtf.relative_to(ctx_dir)
+            print(f"  context/{rel}: {len(defs)} definition(s)")
 
     # ---- Pass 3: build known-types map for cross-references ----------
     # Maps type-name → #include-path (no quotes, e.g. generated/context/DeviceInfo.hpp)
@@ -628,14 +817,20 @@ def main() -> int:
             path.write_text(generate_context_hpp(ctx, known_types))
             print(f"  wrote {path}")
 
-        context_names = [c["name"] for c in all_contexts if c["kind"] == "context"]
+        context_defs = [c for c in all_contexts if c["kind"] == "context"]
+        context_names = [c["name"] for c in context_defs]
         path = gen_root / "TaskType.hpp"
-        path.write_text(generate_business_type_hpp(context_names))
+        path.write_text(generate_business_type_hpp(context_defs))
         print(f"  wrote {path}")
 
         # 6. TaskTypeTraits.hpp — compile-time TaskType → ContextType mapping
         path = gen_root / "TaskTypeTraits.hpp"
         path.write_text(generate_task_type_traits_hpp(context_names))
+        print(f"  wrote {path}")
+
+        # 7. TaskPoolTypes.hpp — ContextManager tuple + dispatch helpers
+        path = gen_root / "TaskPoolTypes.hpp"
+        path.write_text(generate_task_pool_types_hpp(context_names))
         print(f"  wrote {path}")
 
     total = len(all_defines) + len(all_messages) + len(all_contexts)
