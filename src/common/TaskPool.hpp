@@ -32,20 +32,15 @@ class TaskPool
   public:
     explicit TaskPool(size_t capacityPerType = kIndexCount);
 
-    // ---- GTID lifecycle ----------------------------------------------
     utils::Result<GTID> allocate(TaskType type);
     void deallocate(GTID gtid);
 
-    // ---- Context access (hot path) -----------------------------------
-    // 可读写：GTID 类型必须与 Ctx 严格一致，否则打日志返空
     template <typename Ctx>
     utils::Result<Ctx &> getContext(GTID gtid);
 
-    // 只读：仅校验 context 有效性，不做类型检查
     template <typename Ctx>
     utils::Result<const Ctx &> getContextRead(GTID gtid);
 
-    // ---- helpers -----------------------------------------------------
     size_t available(TaskType type) const;
 
   private:
