@@ -1,4 +1,4 @@
-include common/message/dataStruct.mt
+include "dataStruct.mt"
 
 message InternalPing
     string message
