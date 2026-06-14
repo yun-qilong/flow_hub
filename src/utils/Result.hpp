@@ -19,24 +19,20 @@ template <typename T>
 class Result
 {
   public:
-    // ----- construction ----------------------------------------------
     Result() noexcept = default;
 
     explicit Result(T value) : data_(std::move(value)) {}
 
     /* implicit */ Result(std::nullopt_t) noexcept : data_(std::nullopt) {}
 
-    // ----- query -----------------------------------------------------
     [[nodiscard]] bool has_value() const noexcept
     {
         return data_.has_value();
     }
 
-    // ----- branching -------------------------------------------------
-    // 有值时调用 onValue，无值时调用 onEmpty。
-    // 两个 lambda 的返回值类型必须一致。
     template <typename FnValue, typename FnEmpty>
-    [[nodiscard]] std::invoke_result_t<FnValue, T &> useOrFailed(FnValue &&onValue, FnEmpty &&onEmpty)
+    [[nodiscard]] std::invoke_result_t<FnValue, T &> useOrFailed(FnValue &&onValue,
+                                                                 FnEmpty &&onEmpty)
     {
         if (FH_LIKELY(data_))
         {
@@ -49,7 +45,8 @@ class Result
     }
 
     template <typename FnValue, typename FnEmpty>
-    [[nodiscard]] std::invoke_result_t<FnValue, const T &> useOrFailed(FnValue &&onValue, FnEmpty &&onEmpty) const
+    [[nodiscard]] std::invoke_result_t<FnValue, const T &> useOrFailed(FnValue &&onValue,
+                                                                       FnEmpty &&onEmpty) const
     {
         if (FH_LIKELY(data_))
         {
@@ -65,27 +62,24 @@ class Result
     std::optional<T> data_;
 };
 
-// ---- Result<T&> 偏特化：引用语义，内部用指针 ---------------
 template <typename T>
 class Result<T &>
 {
   public:
-    // ----- construction ----------------------------------------------
     Result() noexcept = default;
 
     explicit Result(T &ref) noexcept : ptr_(&ref) {}
 
     /* implicit */ Result(std::nullopt_t) noexcept {}
 
-    // ----- query -----------------------------------------------------
     [[nodiscard]] bool has_value() const noexcept
     {
         return ptr_ != nullptr;
     }
 
-    // ----- branching -------------------------------------------------
     template <typename FnValue, typename FnEmpty>
-    [[nodiscard]] std::invoke_result_t<FnValue, T &> useOrFailed(FnValue &&onValue, FnEmpty &&onEmpty)
+    [[nodiscard]] std::invoke_result_t<FnValue, T &> useOrFailed(FnValue &&onValue,
+                                                                 FnEmpty &&onEmpty)
     {
         if (FH_LIKELY(ptr_))
         {
@@ -98,7 +92,8 @@ class Result<T &>
     }
 
     template <typename FnValue, typename FnEmpty>
-    [[nodiscard]] std::invoke_result_t<FnValue, const T &> useOrFailed(FnValue &&onValue, FnEmpty &&onEmpty) const
+    [[nodiscard]] std::invoke_result_t<FnValue, const T &> useOrFailed(FnValue &&onValue,
+                                                                       FnEmpty &&onEmpty) const
     {
         if (FH_LIKELY(ptr_))
         {
