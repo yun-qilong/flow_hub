@@ -227,6 +227,42 @@ context SomeContext
 
 ---
 
+## 修订四（2026-06-15）：message 中可直接使用 TaskType 作为字段类型
+
+### 修订动机
+
+消息中需要携带 `TaskType` 告知下游"这条消息属于哪种任务"（例如 Session 建立请求），`TaskType` 作为 type 目录下的全局类型应能直接在 message/struct 中声明。
+
+### 决策
+
+`TaskType` 注册为 `gen_code.py` 的内建类型，所有 `.mt` 文件中可**直接使用**，无需 include：
+
+```mt
+message SessionSetupReq
+    TaskType taskType
+```
+
+脚本自动生成：
+
+```cpp
+#include "generated/TaskType.hpp"
+
+namespace common::message {
+struct SessionSetupReq {
+    common::TaskType taskType;
+};
+}
+```
+
+### Semantic difference between TaskType in context vs message
+
+| 位置 | 语义 |
+|------|------|
+| context `.mt` 文件名 | "我是什么类型的 Context"，产生 `TaskType` 枚举项 |
+| message `.mt` 字段类型 | "这条消息属于哪种任务"，使用 `TaskType` 枚举值 |
+
+---
+
 ## 备选方案
 
 | 方案 | 否决原因 |
@@ -246,6 +282,7 @@ context SomeContext
 | 2026-06-14 | 修订一：改为 `TaskType`（非类型模板参数），通过 `TaskTypeTraits` 编译期推导 `ContextType`。目的：与消息、GTID、SessionMgr 中的 TaskType 统一全链路标识，消除概念断裂。新增 `generated/TaskTypeTraits.hpp` 由 `gen_code.py` 自动生成 |
 | 2026-06-14 | 修订二：明确 `TaskType` 为可选参数——仅 Business 层 EO 需要声明，其他层 EO（SessionMgr、Router 等）保持普通 CRTP。`EoBase` 始终不感知此参数 |
 | 2026-06-14 | 修订三：Context `.mt` 文件按目录分类（`systemContext/` / `userContext/` / `otherContext/`），`gen_code.py` 根据目录自动分配 GTID Category。`TaskType` 枚举值编码 `(Category << 6) | subType`，不同 Category 可复用 subType 号。新增 include 规则：`include "context/xxx.mt"` 跨目录引用公共 struct |
+| 2026-06-15 | 修订四：`TaskType` 注册为 `gen_code.py` 内建类型，message/struct 中可直接使用无需 include |
 
 ## 影响
 

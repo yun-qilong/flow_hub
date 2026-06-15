@@ -40,6 +40,10 @@ Writes:
 
   All types support the same field syntax.
   context types additionally get to_string() and cacheLinePadding.
+
+  Special built-in types:
+    TaskType               ← context 枚举类型, 自动 #include "generated/TaskType.hpp"
+                             (值为 common::TaskType, 可直接在 message/context/struct 中使用)
 """
 
 import re
@@ -65,6 +69,7 @@ TYPE_MAP = {
     "bool":   ("bool",        ""),
     "double": ("double",      ""),
     "actor":  ("fw::ActorRef", '"fw/ActorTypes.hpp"'),
+    "TaskType": ("common::TaskType", '"generated/TaskType.hpp"'),
 }
 
 ARRAY_RE = re.compile(r"^(\w+)\[(\d+)\]$")
