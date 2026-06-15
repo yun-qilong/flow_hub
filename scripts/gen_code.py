@@ -68,7 +68,7 @@ TYPE_MAP = {
     "uint64": ("uint64_t",    "<cstdint>"),
     "bool":   ("bool",        ""),
     "double": ("double",      ""),
-    "actor":  ("fw::ActorRef", '"fw/ActorTypes.hpp"'),
+    "actor":  ("fw::EoAddress", '"fw/EoTypes.hpp"'),
     "TaskType": ("common::TaskType", '"generated/TaskType.hpp"'),
 }
 

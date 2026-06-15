@@ -11,7 +11,7 @@ namespace DPlane::business
 class Router : public fw::EoBase<Router>
 {
   public:
-    explicit Router(fw::ActorConfig &cfg);
+    explicit Router(fw::EoConfig &cfg);
 
     // message handlers
     void handle(const common::message::ModifyReq &req);
@@ -21,7 +21,7 @@ class Router : public fw::EoBase<Router>
     void init() override;
 
   private:
-    fw::ActorRef businessMgr;
+    fw::EoAddress businessMgr;
 };
 
 } // namespace DPlane::business

@@ -10,7 +10,7 @@ namespace CPlane
 using namespace fw;
 using namespace common::message;
 
-BusinessMgr::BusinessMgr(ActorConfig &cfg) : EoBase<BusinessMgr>(cfg) {}
+BusinessMgr::BusinessMgr(EoConfig &cfg) : EoBase<BusinessMgr>(cfg) {}
 
 void BusinessMgr::init()
 {

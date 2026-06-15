@@ -42,7 +42,7 @@ EO(Entity Object) 是本架构中最小的独立业务逻辑单元，采用 Acto
 |------|------|
 | **纯消息驱动** | EO 仅通过收发消息与外界交互，不暴露同步调用接口 |
 | **无状态** | EO 不保存持久化业务状态，所有状态存储在外部上下文（Context）中 |
-| **内部串行** | 每个 EO 内的消息处理是串行的（由底层 Actor 运行时保证），无锁安全 |
+| **内部串行** | 每个 EO 内的消息处理是串行的（由底层 EO 运行时保证），无锁安全 |
 | **EO 间并行** | 不同 EO 可部署在不同 CPU 核上，运行时的 work-stealing 线程池自动调度 |
 | **职责单一** | 一个 EO 只负责一类独立业务功能 |
 | **故障隔离** | 单个 EO 崩溃仅影响其所属业务 |
@@ -168,8 +168,8 @@ graph TB
 
 ```
 Access Layer（接入层 · 不分面）
-├── CLIAdapter               stdin/stdout -> 内部格式（非 Actor，独立线程）
-├── WsAdapter                WebSocket -> 内部格式（非 Actor，独立线程）
+├── CLIAdapter               stdin/stdout -> 内部格式（非 EO，独立线程）
+├── WsAdapter                WebSocket -> 内部格式（非 EO，独立线程）
 └── AccessGateway            分拣：控制指令 -> SessionMgr / 数据消息 -> SessionData
 
 Session Layer（会话层）
@@ -189,11 +189,11 @@ Service Layer（服务层）
 ├── C-Plane: ServiceMgr      设备发现、连接管理、维护设备注册表、配置分发表和过滤规则
 └── D-Plane: ServiceGateway   智能设备入口——接收已规范化的消息，查分发表 fan-out 给 Router
              ProtocolGateway  傻瓜设备入口——过滤垃圾数据 → 规范化 → fan-out 给 Router（与 ServiceGateway 平级）
-             MqttAdapter      纯协议翻译：内部消息 <-> MQTT（非 Actor）
-             AiApiAdapter     纯协议翻译：内部消息 <-> HTTP（非 Actor）
-             CanAdapter       CAN Bus 协议适配（预留，非 Actor）
-             ModbusAdapter    Modbus RTU/TCP（预留，非 Actor）
-             NPUAdapter       NPU 推理结果接入（预留，非 Actor）
+             MqttAdapter      纯协议翻译：内部消息 <-> MQTT（非 EO）
+             AiApiAdapter     纯协议翻译：内部消息 <-> HTTP（非 EO）
+             CanAdapter       CAN Bus 协议适配（预留，非 EO）
+             ModbusAdapter    Modbus RTU/TCP（预留，非 EO）
+             NPUAdapter       NPU 推理结果接入（预留，非 EO）
 ```
 
 ### Service Layer D 面：按设备自治能力分流
@@ -416,7 +416,7 @@ AutomationBus 作为规则引擎，不感知底层协议。一个规则可同时
 | 双地址字段 | 采用 | 业务地址不变，物理部署可变 |
 | D 面消息经 Router 中转 | 采用 | 消息路径可控，映射集中管理 |
 | 仅业务层支持多实例 | 采用 | 会话层 I/O 密集不占 CPU，服务层瓶颈在外部设备 |
-| 应用层消息确认重传 | 废弃 | Actor 崩溃不应是常态，根因应在代码质量与测试中消除 |
+| 应用层消息确认重传 | 废弃 | EO 崩溃不应是常态，根因应在代码质量与测试中消除 |
 | 消息体持久化缓存 | 废弃 | 仅用于配合重传，重传不做则无意义 |
 | Service 层按设备自治能力分流 | 采用 | 智能设备自带过滤走 ServiceGateway，傻瓜设备需系统主动管教走 ProtocolGateway |
 | ServiceGateway 与 ProtocolGateway 平级 | 采用 | 两者都是入口，复杂度不同但地位相同 |

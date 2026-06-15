@@ -110,7 +110,7 @@ ServiceMgr ──(Adapter地址)──▶ BusinessMgr ──(Reconfig)──▶ 
 
 | 方案 | 否决原因 |
 |------|----------|
-| Context 存在 SessionMgr 手里，EO 通过消息访问 | 每次读写都要跨 Actor 发消息，延迟过高 |
+| Context 存在 SessionMgr 手里，EO 通过消息访问 | 每次读写都要跨 EO 发消息，延迟过高 |
 | Context 存在每个 EO 本地缓存 | EO 崩溃后缓存丢失；多实例间一致性难维护 |
 | 映射表只存 Router，BM 每次查询 Router | BM 发送消息查询再等回复，增加 task 建立延迟；BM 无法独立做负载均衡 |
 | 映射表只存 BM，Router 每次查 BM | Router 处于消息转发热路径，每次查 BM 不可接受 |

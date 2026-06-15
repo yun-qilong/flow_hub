@@ -7,7 +7,7 @@
 
 #pragma once
 
-#include "fw/ActorTypes.hpp"
+#include "fw/EoTypes.hpp"
 #include "generated/message/Messages.hpp"
 #include "utils/CrtpBase.hpp"
 
@@ -23,7 +23,7 @@ template <typename Derived>
 class EoBase : public caf::event_based_actor, public utils::CrtpBase<Derived>
 {
   public:
-    explicit EoBase(ActorConfig &cfg) : caf::event_based_actor(cfg) {}
+    explicit EoBase(EoConfig &cfg) : caf::event_based_actor(cfg) {}
 
   protected:
     // ----- message handler registration -------------------------------
@@ -71,27 +71,46 @@ class EoBase : public caf::event_based_actor, public utils::CrtpBase<Derived>
 
     // ----- message sending ------------------------------------------
     template <typename Msg>
-    void sendTo(ActorRef target, Msg &&msg)
+    void sendTo(EoAddress target, Msg &&msg)
     {
         this->mail(std::forward<Msg>(msg)).send(target);
     }
 
     template <typename Msg>
-    void delegateTo(ActorRef target, Msg &&msg)
+    void delegateTo(EoAddress target, Msg &&msg)
     {
         this->mail(std::forward<Msg>(msg)).delegate(target);
     }
 
     template <typename Duration, typename Msg>
-    void delaySendTo(ActorRef target, Duration d, Msg &&msg)
+    void delaySendTo(EoAddress target, Duration d, Msg &&msg)
     {
         this->mail(std::forward<Msg>(msg)).schedule(d).send(target);
     }
 
     template <typename Msg>
-    static void anonSendTo(ActorRef target, Msg &&msg)
+    static void anonSendTo(EoAddress target, Msg &&msg)
     {
         caf::anon_mail(std::forward<Msg>(msg)).send(target);
+    }
+
+    // ----- request-response -----------------------------------------
+    // 发送请求并注册异步回调（then 模式：等待响应期间可处理其他消息）
+    // 仅用于 C 面直接通信，不经过 Router 的 D 面流转请使用 sendTo/delegateTo。
+    template <typename Msg, typename OnValue, typename OnError>
+    void requestThen(EoAddress target, caf::timespan timeout, Msg &&msg, OnValue &&onValue,
+                     OnError &&onError)
+    {
+        this->mail(std::forward<Msg>(msg))
+            .request(target, timeout)
+            .then(std::forward<OnValue>(onValue), std::forward<OnError>(onError));
+    }
+
+    // ----- self address ---------------------------------------------
+    // 返回当前 EO 的地址引用，用于填入消息体供对端回消息时使用。
+    EoAddress selfRef()
+    {
+        return caf::actor_cast<EoAddress>(this);
     }
 
     void stop()

@@ -12,7 +12,7 @@ namespace CPlane
 class BusinessMgr : public fw::EoBase<BusinessMgr>
 {
   public:
-    explicit BusinessMgr(fw::ActorConfig &cfg);
+    explicit BusinessMgr(fw::EoConfig &cfg);
 
     // message handlers
     void handle(const common::message::InternalPing &msg);
@@ -20,10 +20,6 @@ class BusinessMgr : public fw::EoBase<BusinessMgr>
 
   protected:
     void init() override;
-
-  private:
-    // context — temporary placeholder for future static memory
-    utils::Result<fw::ActorRef> context;
 };
 
 } // namespace CPlane

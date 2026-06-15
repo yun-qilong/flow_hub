@@ -10,7 +10,7 @@ namespace DPlane::business
 using namespace fw;
 using namespace common::message;
 
-Router::Router(ActorConfig &cfg) : EoBase<Router>(cfg) {}
+Router::Router(EoConfig &cfg) : EoBase<Router>(cfg) {}
 
 void Router::init()
 {
