@@ -1,7 +1,7 @@
 # Flow Hub
 
 > 一个基于 Actor 模型的消息驱动嵌入式编排平台  
-> 版本：v0.2  |  最后更新：2026-05-28
+> 版本：v0.3  |  最后更新：2026-06-15
 
 ---
 
@@ -61,22 +61,34 @@ EO(Entity Object) 是本架构中最小的独立业务逻辑单元，采用 Acto
 
 ### 3.3 消息 —— 唯一的通信载体
 
-系统中所有通信均通过消息完成。每条消息携带**双地址**：
+系统中所有通信均通过消息完成。所有消息统一携带三个字段：
 
-| 字段 | 含义 | 用途 |
+| 字段 | 类型 | 含义 |
 |------|------|------|
-| **RoutineAddress** | 消息的投递目标字段，固定为 Router 的物理地址 | 所有跨层 D 面消息统一由此进入路由中转 |
-| **SchedulerAddress** | 消息体第一个字段，数字标识，如 `0x0001` | 对外暴露的业务目标标识，Router 取出后查映射表解析为物理地址 |
+| **GTID** | `uint16_t` | 统一任务标识。Router 从 GTID 提取 TaskType 位作为路由键 |
+| **sourceAddress** | `EoAddress` | 回复地址——接收方回消息时直接用 `sendTo(msg.sourceAddress, resp)` |
+| **payload** | 业务字段 | 与具体业务相关的数据载荷 |
 
-发送方填充双地址。Router 收到后取出 SchedulerAddress 查映射表，将解析后的物理地址填入转发消息的 TargetAddress 字段。对外表现为双地址语义。
-
-Router 内部维护映射表。多个虚拟 ID 可映射到同一物理 ID（初期），扩展多实例后不同虚拟 ID 可映射到不同物理 ID。映射表示例：
+**核心路由规则**：仅发往 Business 层 D 面 EO 的消息经 Router 中转，其他方向全部物理直连。
 
 ```
-0x0001 → AiChatBus0 物理地址
-0x0002 → AiChatBus0 物理地址  （同一物理 EO，不同虚拟 ID）
-0x0003 → AiChatBus1 物理地址  （另一实例，多实例并行）
+发给 Business D 面 EO：
+  SessionData ──sendTo(Router, {gtid, sourceAddress, payload})──▶
+    Router 提取 GTID.TaskType → 查表 → delegateTo(target, msg)
+
+从 Business D 面 EO 发出：
+  AiChatBus ──sendTo(target, {gtid, sourceAddress, payload})──▶ 直连
 ```
+
+**`sourceAddress` 填入规则**：发送方想一句话——"对方回复时应该发给谁？"
+
+| 消息方向 | sourceAddress 填什么 | 原因 |
+|---------|---------------------|------|
+| → Business D 面 EO（经 Router） | `myAddress()` | 让 Business EO 直连回复我 |
+| Business D 面 EO → 外（直连） | Router 地址 | 让对端回复时经 Router 查表 |
+| Resp 任意方向 | 按上述规则填 | 统一消息头，便于链路追踪 |
+
+**Router 定位**：Router 是 Business Layer D 面的一个 EO，不是全局路由设施。它只负责本层 EO 的地址映射。其他层若有热备需求，应在各自层内增设自己的 Router。
 
 ### 3.4 内存模型
 
@@ -96,8 +108,8 @@ Router 内部维护映射表。多个虚拟 ID 可映射到同一物理 ID（初
 ```mermaid
 graph TB
     subgraph Access["Access Layer 接入层 不分面"]
-        CLI["CLIAdapter 非Actor"]
-        WS["WsAdapter 非Actor"]
+        CLI["CLIAdapter 非 EO"]
+        WS["WsAdapter 非 EO"]
         AG["AccessGateway"]
         CLI --> AG
         WS --> AG
@@ -120,9 +132,9 @@ graph TB
         SVM["C-Plane ServiceMgr"]
         SG["D-Plane ServiceGateway"]
         PG["D-Plane ProtocolGateway"]
-        MqttAd["MqttAdapter 非Actor"]
-        ApiAd["AiApiAdapter 非Actor"]
-        CanAd["CanAdapter 非Actor"]
+        MqttAd["MqttAdapter 非 EO"]
+        ApiAd["AiApiAdapter 非 EO"]
+        CanAd["CanAdapter 非 EO"]
     end
 
     AG --> SM
@@ -135,9 +147,10 @@ graph TB
     R --> AI
     R --> AU
     R --> DM
-    AI --> R
-    AU --> R
-    DM --> R
+    AI --> SD
+    AI --> SG
+    AU --> SG
+    DM --> SG
     MqttAd --> SG
     ApiAd --> SG
     CanAd --> PG
@@ -174,11 +187,11 @@ Access Layer（接入层 · 不分面）
 
 Session Layer（会话层）
 ├── C-Plane: SessionMgr      会话创建/销毁，与 BusinessMgr 交互，维护 SessionContext
-└── D-Plane: SessionData     消息包装（填双地址），转发至 Router
+└── D-Plane: SessionData     消息包装（填 GTID + sourceAddress），转发至 Router
 
 Business Layer（业务层）
 ├── C-Plane: BusinessMgr     资源分配、选择业务 EO、维护路由 context 和 BusinessContext
-└── D-Plane: Router          双地址解析，虚拟 ID 与物理 EO 映射，消息转发
+└── D-Plane: Router          GTID 路由：提取 TaskType 位查表，delegate 零拷贝转发
              AiChatBus       单 AI 对话
              AiPanelBus      多 AI 讨论（裁判模式，未来）
              SceneBus        场景管理
@@ -220,30 +233,35 @@ Service Layer D 面不再有"每种服务一个 Svc EO"。只有两个平级入�
 
 | 通信方向 | 规则 |
 |---------|------|
-| **Adapter -> AccessGateway** | 同层（接入层内部），直接通信 |
-| **AccessGateway -> SessionMgr / SessionData** | 跨层（接入层->会话层），地址在启动时下发 |
-| **C 面 -> C 面** | 相邻层点对点直连，不经过 Router |
-| **D 面跨层** | 必须经业务层 Router 中转 |
-| **同层 D 面 <-> D 面** | 直接通信，目标 EO 地址记录在对应业务的上下文中 |
-| **跨层 D 面直连** | 需控制面签发通信许可证 |
-| **C 面 <-> 同层 D 面** | 可直接通知 |
-| **服务层 -> 业务层** | Adapter → ServiceGateway/ProtocolGateway → Router → Business EO |
-| **ServiceMgr -> ServiceGateway/ProtocolGateway** | C 面配置 D 面（分发表/过滤规则），直接通信 |
+| **Adapter → AccessGateway** | 同层（接入层内部），直接通信 |
+| **AccessGateway → SessionMgr / SessionData** | 跨层（接入层→会话层），地址在启动时下发 |
+| **C 面 → C 面** | 相邻层点对点直连，推荐 `requestThen` |
+| **→ Business D 面 EO** | 经 Business 层 Router 中转。GTID 中的 TaskType 位即路由键 |
+| **Business D 面 EO → 外** | 物理直连。下层地址记录在 EO 实例成员中（系统 setup 时由 BusinessMgr 下发） |
+| **同层 D 面 ↔ D 面** | 直接通信，目标地址记录在对应业务的上下文中 |
+| **C 面 ↔ 同层 D 面** | 可直接通信 |
+| **Adapter → ServiceGateway/ProtocolGateway** | 服务层内部，直接通信 |
+| **ServiceMgr → ServiceGateway/ProtocolGateway** | C 面配置 D 面（分发表/过滤规则），直接通信 |
 
-### 6.2 Router 与双地址
+> **判定原则**：只有 Business 层 D 面 EO 有地址映射（热备/负载均衡）需求，因此只有发往它们的消息需要经 Router。其他层当前无此需求，直连即可。若将来其他层也引入热备，应在该层内增设自己的 Router。
 
-跨层 D 面消息不直接发往目标 EO，而是统一经 Router 中转。这是由分层架构的核心矛盾决定的——**发送方不应该知道目标 EO 的物理地址**，因为该地址可能因扩实例、热备切换或 EO 重构而变化。
+### 6.2 Router 与 GTID 路由
 
-解决这一矛盾的机制由紧密配合的两个部分构成：
+Router 是 Business Layer D 面的一个 EO，职责是解析 GTID 中的 TaskType 位，将消息投递给正确的 Business D 面 EO 实例。
 
-**Router（路由中转）**：所有跨层 D 面消息统一发送至 Router，由 Router 集中负责送达。发送方只需知道 Router 的地址（固定不变）。
+```
+Router 查表键 = GTID >> 6（即 TaskType 字段，见 ADR-0008）
 
-**双地址**：
-- **RoutineAddress**：消息的投递目标字段，固定为 Router 物理地址
-- **SchedulerAddress**：消息体第一个字段，数字标识（如 `0x0001`），创建时分配，永不变化
-- Router 取出 SchedulerAddress 查映射表，将解析后的物理地址填入转发消息的 RoutineAddress
+示例：
+  GTID 0x7001 → TaskType = 0x01C0 (AiChat) → 查表 → AiChatBus 实例
+  GTID 0x7002 → TaskType = 0x01C0 (AiChat) → 查表 → AiChatBus 实例（可能不同）
+```
 
-两者配合的效果：物理 EO 从 1 个实例扩充到 3 个、活跃 EO 崩溃后切换到热备实例、业务 EO 重构拆分为多个子 EO——Router 更新映射表即可完成，所有依赖方代码完全无感。
+**热备切换**：Router 将 TaskType → 活跃实例的映射更新为新的物理地址。上游完全无感——GTID 不变，TaskType 不变，只有 Router 内部的映射变了。
+
+**负载均衡**：Router 维护每个 TaskType 对应的实例池，从池中任选一个实例投递。因 Context 存储在共享的 TaskPool 中，不同实例处理同一 GTID 的消息无碍——原子性规则保证同一时刻仅一条消息在处理。
+
+**消息流转**：Router 使用 `delegate()` 零拷贝转发，不修改消息体。`sourceAddress` 字段由发送方预先填入，Router 不干预。
 
 ### 6.3 会话建立流程（Setup）
 
@@ -252,25 +270,29 @@ sequenceDiagram
     participant AG as AccessGateway
     participant SMC as SessionMgr
     participant BMC as BusinessMgr
+    participant R as Router
+    participant AI as AiChatBus
     participant SVC as ServiceMgr
+    participant SG as ServiceGateway
 
-    Note over AG,SVC: 用户发起 new 命令
+    Note over AG,SG: 用户发起 new 命令
 
     AG->>SMC: NewSession
-    SMC->>BMC: SetupReq
 
-    Note over BMC: 选择已有 AiChatBus
-    Note over BMC: 分配虚拟ID 0x0001
-    Note over BMC: 更新路由 context
-    Note over BMC: 通知 Router
+    Note over SMC: 通过 TaskPool 分配 GTID<br/>初始化 Context
 
-    BMC->>SVC: SetupReq
+    SMC->>BMC: SetupReq{gtid, taskType}
+    BMC->>R: 验证通路
+    R->>AI: 验证通路
+    BMC->>SVC: SetupReq{gtid}
+    SVC->>SG: 验证通路
 
-    Note over SVC: 确认线路正常
+    Note over SVC,SG: 确认线路正常
 
+    SG-->>SVC: OK
     SVC-->>BMC: SetupResp
-
-    Note over BMC: 写入 BusinessContext
+    AI-->>R: OK
+    R-->>BMC: OK
 
     BMC-->>SMC: SetupResp
 
@@ -279,10 +301,9 @@ sequenceDiagram
     SMC-->>AG: SessionReady
 ```
 
-- 全程 C 面对 C 面
-- BusinessMgr **选择**已有 EO，非每次实例化
-- ServiceMgr 确认服务层线路正常后返回确认
-- BusinessContext 记录会话对应的 SchedulerAddress
+- 全程 C 面对 C 面；SessionMgr 通过 TaskPool 分配 GTID 并初始化 Context
+- BusinessMgr 将 SetupReq 同时发往 Router/Business EO 和服务层，验证全链路通路
+- 通路确认后 SessionMgr 写入 SessionContext，会话就绪
 
 ### 6.4 AI 对话消息流转
 
@@ -298,28 +319,34 @@ sequenceDiagram
     participant ApiAd as AiApiAdapter
     participant ExtAPI as AI API
 
-    User->>CLI: 你好
-    CLI->>AG: UserInput
-    AG->>SD: UserMsg
-    SD->>R: 双地址消息
-    R->>AI: 查表转发
+    Note over User,ExtAPI: 下行（用户 → AI API）
 
-    Note over AI: 查 BusinessContext
-    Note over AI: 构造 AI API 请求
+    User->>CLI: 输入文本
+    CLI->>AG: chat
+    AG->>SD: AiChatReq{gtid, sourceAddress=SD}
+    SD->>R: AiChatReq（GTID 中 TaskType=AiChat）
+    Note over R: 提取 TaskType → 查表 → AiChatBus
+    R->>AI: AiChatReq
+    Note over AI: 处理请求，组装服务层请求
+    AI->>SG: AiChatToSvcReq{gtid, sourceAddress=R}
+    SG->>ApiAd: 翻译后的 HTTP 请求
+    ApiAd->>ExtAPI: POST /v1/chat
 
-    AI->>SG: AI 请求消息
-    SG->>ApiAd: 转发
-    ApiAd->>ExtAPI: HTTP POST
-    ExtAPI-->>ApiAd: AI 回复
-    ApiAd-->>SG: 回复
-    SG-->>R: 应答（经 Router）
-    R-->>AI: 应答
-    AI-->>R: resp
-    R-->>SD: resp
-    SD-->>AG: UserResp
-    AG-->>CLI: 打印
-    CLI-->>User: AI 回复
+    Note over User,ExtAPI: 上行（AI API → 用户）
+
+    ExtAPI-->>ApiAd: 响应数据
+    ApiAd-->>SG: 内部格式
+    SG-->>R: AiChatFromSvcResp{gtid}
+    Note over R: 提取 TaskType → 查表 → AiChatBus
+    R-->>AI: AiChatFromSvcResp
+    Note over AI: 整合结果
+    AI-->>SD: AiChatResp{gtid}（直连，不走 Router）
+    SD-->>AG: 包装消息
+    AG-->>CLI: 内部格式
+    CLI-->>User: 显示结果
 ```
+
+> **关键点**：GTID 中的 TaskType 位即路由键。Router 在入向提取 TaskType 查表转发，出向消息物理直连。AiChatBus 回复 SessionData 时使用 `sourceAddress` 中记录的地址直连，无需经过 Router。
 
 - AiChatBus 直接通过 ServiceGateway 调用 AI API，无需经过中间服务 EO
 - AiApiAdapter 是纯粹的协议翻译器（内部消息 ↔ HTTP），不参与路由决策
@@ -390,10 +417,10 @@ AutomationBus 作为规则引擎，不感知底层协议。一个规则可同时
 
 | Phase | 版本 | 功能 |
 |-------|------|------|
-| **Phase 1** | 1.0 | 基础路由：虚拟 ID 与物理 EO 一一对应，EO 崩溃后原地重启 |
+| **Phase 1** | 1.0 | 基础路由：TaskType 与物理 EO 一一对应，EO 崩溃后原地重启 |
 | **Phase 2** | 1.x | 负载监控：收集各 EO 运行时指标（纯观测） |
 | **Phase 3** | 2.0 | 多实例并行：同一业务多 EO 实例并行处理，动态扩缩 |
-| **Phase 4** | 2.x | 热备：活跃 EO 崩溃后虚拟 ID 瞬间重映射到热备 EO |
+| **Phase 4** | 2.x | 热备：活跃 EO 崩溃后 Router 瞬间重映射 TaskType 到热备 EO |
 
 ---
 
@@ -413,7 +440,7 @@ AutomationBus 作为规则引擎，不感知底层协议。一个规则可同时
 |------|------|------|
 | 无状态 EO + 外部上下文 | 采用 | 热备切换无感、可独立测试、状态可审计 |
 | 静态内存池 + 禁止堆分配 | 采用 | 确定性内存行为，嵌入式友好 |
-| 双地址字段 | 采用 | 业务地址不变，物理部署可变 |
+| GTID + sourceAddress 消息头 | 采用 | GTID 自带路由信息，sourceAddress 统一回复路径 |
 | D 面消息经 Router 中转 | 采用 | 消息路径可控，映射集中管理 |
 | 仅业务层支持多实例 | 采用 | 会话层 I/O 密集不占 CPU，服务层瓶颈在外部设备 |
 | 应用层消息确认重传 | 废弃 | EO 崩溃不应是常态，根因应在代码质量与测试中消除 |

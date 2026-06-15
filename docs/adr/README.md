@@ -13,6 +13,7 @@
 | [0008](./0008-gtid.md) | 任务标识采用 GTID（General Task Identifier） | 已采纳 |
 | [0009](./0009-gtid-context-rules.md) | GTID Context 访问规则、物理存储与映射表同步协议 | 已采纳 |
 | [0010](./0010-eo-context-type.md) | EO 强制声明 ContextType 模板参数 | 已采纳 |
+| [0011](./0011-gtid-routing-key.md) | GTID 替代虚拟 ID 作为路由键，Router 定位为层内设施 | 已采纳 |
 
 ## 模板
 

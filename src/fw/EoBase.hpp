@@ -108,7 +108,7 @@ class EoBase : public caf::event_based_actor, public utils::CrtpBase<Derived>
 
     // ----- self address ---------------------------------------------
     // 返回当前 EO 的地址引用，用于填入消息体供对端回消息时使用。
-    EoAddress selfRef()
+    EoAddress myAddress()
     {
         return caf::actor_cast<EoAddress>(this);
     }
