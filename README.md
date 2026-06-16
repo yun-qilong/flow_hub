@@ -345,6 +345,7 @@ sequenceDiagram
 - AiChatBus 直接通过 ServiceGateway 调用 AI API，Gateway 查 Adapter 注册表转发给对应 Adapter
 - Adapter 入向使用消息头中的 `sourceAddress`（Business D 面 EO 发送时填入 Router 地址）直接回复 Router
 - AiApiAdapter 是纯粹的协议翻译器（内部消息 ↔ HTTP），不参与路由决策
+- **消息负载**：`AiChatRequest` 携带 `{targetAi, messagesJson, temperature}`，其中 `messagesJson` 为 OpenAI 兼容的 `messages` 数组 JSON 字符串。对话历史存于 `AiChatContext.messagesBuffer`（静态定长内存），AiChatBus 纯追加写入、整段拷贝发出，不做解析（详见 ADR-0015）
 
 ### 6.5 设备数据流与 fan-out
 
