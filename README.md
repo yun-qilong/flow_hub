@@ -55,40 +55,39 @@ EO(Entity Object) 是本架构中最小的独立业务逻辑单元，采用 Acto
 |-----------|---------|--------|
 | **SessionContext** | 会话 ID → 业务地址映射、会话状态 | SessionMgr |
 | **BusinessContext** | 业务实例 → 服务层业务 EO 地址、运行状态、规则列表、设备数据（DataManager 写入） | BusinessMgr |
-| **ServiceContext** | 设备注册表、ServiceGateway 分发表、ProtocolGateway 过滤规则 | ServiceMgr |
+| **ServiceContext** | 设备注册表、Adapter 注册表、fan-out 配置 | ServiceMgr |
 
 **原子性规则**：所有上下文修改必须与消息发送原子绑定，禁止在消息处理中间过程中修改上下文。日志/可观测性数据的写入不受此约束。
 
 ### 3.3 消息 —— 唯一的通信载体
 
-系统中所有通信均通过消息完成。所有消息统一携带三个字段：
+系统中所有通信均通过消息完成。所有消息统一携带两个字段：
 
 | 字段 | 类型 | 含义 |
 |------|------|------|
-| **GTID** | `uint16_t` | 统一任务标识。Router 从 GTID 提取 TaskType 位作为路由键 |
+| **gtidList** | `vector<uint16_t>` | 目标 GTID 列表（通常 1 个，fan-out 时多个）。Router 遍历列表逐条路由 |
 | **sourceAddress** | `EoAddress` | 回复地址——接收方回消息时直接用 `sendTo(msg.sourceAddress, resp)` |
-| **payload** | 业务字段 | 与具体业务相关的数据载荷 |
 
 **核心路由规则**：仅发往 Business 层 D 面 EO 的消息经 Router 中转，其他方向全部物理直连。
 
 ```
 发给 Business D 面 EO：
-  SessionData ──sendTo(Router, {gtid, sourceAddress, payload})──▶
-    Router 提取 GTID.TaskType → 查表 → delegateTo(target, msg)
+  发送方 ──sendTo(Router, {gtidList: [gtid], sourceAddress, ...})──▶
+    Router 遍历 gtidList，对每个 GTID 提取 TaskType 位查表 → delegateTo(target, msg)
 
 从 Business D 面 EO 发出：
-  AiChatBus ──sendTo(target, {gtid, sourceAddress, payload})──▶ 直连
+  AiChatBus ──sendTo(target, {gtidList: [gtid], sourceAddress, ...})──▶ 直连
 ```
 
-**`sourceAddress` 填入规则**：发送方想一句话——"对方回复时应该发给谁？"
+**`sourceAddress` 填入规则**：
 
-| 消息方向 | sourceAddress 填什么 | 原因 |
-|---------|---------------------|------|
-| → Business D 面 EO（经 Router） | `myAddress()` | 让 Business EO 直连回复我 |
-| Business D 面 EO → 外（直连） | Router 地址 | 让对端回复时经 Router 查表 |
-| Resp 任意方向 | 按上述规则填 | 统一消息头，便于链路追踪 |
+| 消息方向（发送方所在层） | sourceAddress 填什么 | 原因 |
+|------------------------|---------------------|------|
+| Session 层 → Business D 面 EO（经 Router） | `myAddress()` | 让 Business EO 直连回复到 Session 层 |
+| Business D 面 EO → 外（直连） | Router 地址 | 让对端回复时经 Router 查表回到 Business 层 |
+| Service 层 → 外（直连） | 无实质影响，可填 Gateway 地址 | Service 层发出的均为响应，不期待回复 |
 
-**Router 定位**：Router 是 Business Layer D 面的一个 EO，不是全局路由设施。它只负责本层 EO 的地址映射。其他层若有热备需求，应在各自层内增设自己的 Router。
+**Router 定位**：Router 是 Business Layer D 面的一个 EO，不是全局路由设施。它遍历消息头中的 `gtidList`，对每个 GTID 提取 TaskType 位查表路由。单 GTID 就是遍历一次，fan-out 就是遍历多次——逻辑完全统一。
 
 ### 3.4 内存模型
 
@@ -131,7 +130,6 @@ graph TB
     subgraph Service["Service Layer 服务层"]
         SVM["C-Plane ServiceMgr"]
         SG["D-Plane ServiceGateway"]
-        PG["D-Plane ProtocolGateway"]
         MqttAd["MqttAdapter 非 EO"]
         ApiAd["AiApiAdapter 非 EO"]
         CanAd["CanAdapter 非 EO"]
@@ -153,11 +151,9 @@ graph TB
     DM --> SG
     MqttAd --> SG
     ApiAd --> SG
-    CanAd --> PG
-    SG --> R
-    PG --> R
+    CanAd --> SG
+    ApiAd --> R
     SVM --> SG
-    SVM --> PG
 ```
 
 ### 各层一句话定位
@@ -167,7 +163,7 @@ graph TB
 | **接入层** | 怎么连进来——把外部消息翻译成内部格式 | 不分面 |
 | **会话层** | 谁在说话——管会话、管消息收发 | C: 会话生命周期（重心）/ D: 消息包装转发 |
 | **业务层** | 要干什么——所有业务逻辑在这里 | C: 资源分配 / D: 路由+业务+规则引擎+数据管理（重心） |
-| **服务层** | 谁能干活——对接 AI、米家、Modbus、NPU 等 | C: 设备生命周期 / D: 智能设备入口+傻瓜设备入口+协议适配 |
+| **服务层** | 谁能干活——对接 AI、米家、Modbus、NPU 等 | C: 设备生命周期 / D: 统一外部服务入口+协议适配 |
 
 > **Session Layer 的不对称性**：重心在 C 面。"会话"天然是控制面概念——身份、生命周期、窗口关联、状态持久化。D 面（SessionData）的作用是剥离非控制类的杂活（消息包装、返回路径管理），让 Mgr 集中精力做控制决策。这与 Business Layer 相反——Business Layer 的重心在 D 面，因为"路由"天然是数据面概念。
 >
@@ -187,7 +183,7 @@ Access Layer（接入层 · 不分面）
 
 Session Layer（会话层）
 ├── C-Plane: SessionMgr      会话创建/销毁，与 BusinessMgr 交互，维护 SessionContext
-└── D-Plane: SessionData     消息包装（填 GTID + sourceAddress），转发至 Router
+└── D-Plane: SessionData     消息包装（填 gtidList + sourceAddress），转发至 Router
 
 Business Layer（业务层）
 ├── C-Plane: BusinessMgr     资源分配、选择业务 EO、维护路由 context 和 BusinessContext
@@ -199,9 +195,8 @@ Business Layer（业务层）
              DataManager     设备数据落地 + 冷热切换 + 老化（纯数据 EO，不参与编排）
 
 Service Layer（服务层）
-├── C-Plane: ServiceMgr      设备发现、连接管理、维护设备注册表、配置分发表和过滤规则
-└── D-Plane: ServiceGateway   智能设备入口——接收已规范化的消息，查分发表 fan-out 给 Router
-             ProtocolGateway  傻瓜设备入口——过滤垃圾数据 → 规范化 → fan-out 给 Router（与 ServiceGateway 平级）
+├── C-Plane: ServiceMgr      设备发现、连接管理、维护设备注册表、配置 Adapter 注册表与 fan-out 配置
+└── D-Plane: ServiceGateway   统一外部服务入口——维护 Adapter 注册表（出向：按消息类型/targetAi 找 Adapter）和 fan-out 配置（出向时预判入向 fan-out 需求，将额外 GTID 嵌入请求）
              MqttAdapter      纯协议翻译：内部消息 <-> MQTT（非 EO）
              AiApiAdapter     纯协议翻译：内部消息 <-> HTTP（非 EO）
              CanAdapter       CAN Bus 协议适配（预留，非 EO）
@@ -209,21 +204,13 @@ Service Layer（服务层）
              NPUAdapter       NPU 推理结果接入（预留，非 EO）
 ```
 
-### Service Layer D 面：按设备自治能力分流
+### Service Layer D 面
 
-Service Layer D 面不再有"每种服务一个 Svc EO"。只有两个平级入口，按设备自治能力分类：
+所有外部设备通过 Adapter 翻译为内部消息后，经由 ServiceGateway 进入系统。Adapter 地位平等，协议差异完全封装在 Adapter 内部。
 
-| 入口 | 对接的设备类型 | 职责 |
-|---|---|---|
-| **ServiceGateway** | 智能设备（MQTT、AI API、HTTP Polling 等） | 接收已规范化的消息，查分发表 fan-out 给 Router。不做过 |
-| **ProtocolGateway** | 傻瓜设备（CAN 总线、Modbus、高频上报传感器等） | 过滤垃圾数据 → 规范化 → fan-out 给 Router。管教无自我管理能力的设备 |
+**Gateway 与 Router 的分发依据不同**：Gateway 按消息类型或消息内字段（如 `targetAi`）做映射——出向找 Adapter，fan-out 决定额外 GTID。Router 仅按 GTID 位运算做路由——不读消息内容，不改消息体。
 
-**两者是平级的。** ProtocolGateway 不是 ServiceGateway 的下游——傻瓜设备路径不经过 ServiceGateway。适配器由 ServiceMgr 配置目标 handle，不知道自己对接的是哪种入口。
-
-**入口选择原则**：
-- MQTT、AI API 等协议自带过滤能力（Broker/服务端做了订阅），Adapter 收上来的数据已经是干净的。走 ServiceGateway。
-- CAN、Modbus 等总线上的数据全收，需系统主动过滤。走 ProtocolGateway。
-- HTTP Polling 等由 Adapter 主动控制的协议，和 MQTT 类似，走 ServiceGateway。
+**fan-out 实现方式**：Gateway 在转发出向请求时查 fan-out 配置，若该请求的响应需要额外通知其他 GTID，则将额外 GTID 列表嵌入出向消息（有 fan-out 时通过 move 大字段 + 新增小字段构造新消息；无 fan-out 时 `delegate` 零拷贝转发）。Adapter 透传该列表至入向消息，打包发给 Router。Router 收到 GTID list 后逐条拆开路由。详见 §6.5。
 
 ---
 
@@ -236,25 +223,32 @@ Service Layer D 面不再有"每种服务一个 Svc EO"。只有两个平级入�
 | **Adapter → AccessGateway** | 同层（接入层内部），直接通信 |
 | **AccessGateway → SessionMgr / SessionData** | 跨层（接入层→会话层），地址在启动时下发 |
 | **C 面 → C 面** | 相邻层点对点直连，推荐 `requestThen` |
-| **→ Business D 面 EO** | 经 Business 层 Router 中转。GTID 中的 TaskType 位即路由键 |
+| **→ Business D 面 EO** | 经 Business 层 Router 中转。gtidList 中每个 GTID 的 TaskType 位即路由键 |
 | **Business D 面 EO → 外** | 物理直连。下层地址记录在 EO 实例成员中（系统 setup 时由 BusinessMgr 下发） |
 | **同层 D 面 ↔ D 面** | 直接通信，目标地址记录在对应业务的上下文中 |
 | **C 面 ↔ 同层 D 面** | 可直接通信 |
-| **Adapter → ServiceGateway/ProtocolGateway** | 服务层内部，直接通信 |
-| **ServiceMgr → ServiceGateway/ProtocolGateway** | C 面配置 D 面（分发表/过滤规则），直接通信 |
+| **Adapter → Router** | 入向直达。Adapter 使用请求中携带的 `sourceAddress`（Router 地址）直接回复 |
+| **Adapter → ServiceGateway** | 服务层内部（出向请求路径），直接通信 |
+| **ServiceMgr → ServiceGateway** | C 面配置 D 面（Adapter 注册表/fan-out 配置），直接通信 |
+| **ServiceGateway → Adapter** | 服务层内部。Gateway 按 Adapter 注册表查目标地址，直接转发 |
 
 > **判定原则**：只有 Business 层 D 面 EO 有地址映射（热备/负载均衡）需求，因此只有发往它们的消息需要经 Router。其他层当前无此需求，直连即可。若将来其他层也引入热备，应在该层内增设自己的 Router。
 
 ### 6.2 Router 与 GTID 路由
 
-Router 是 Business Layer D 面的一个 EO，职责是解析 GTID 中的 TaskType 位，将消息投递给正确的 Business D 面 EO 实例。
+Router 是 Business Layer D 面的一个 EO，职责是遍历消息头中的 `gtidList`，对每个 GTID 提取 TaskType 位，将消息投递给正确的 Business D 面 EO 实例。
 
 ```
-Router 查表键 = GTID >> 6（即 TaskType 字段，见 ADR-0008）
+消息头 gtidList 可包含 1 个或多个 GTID：
+  单 GTID（常规）：gtidList = [0x7001]  → 遍历一次，路由到 AiChatBus
+  多 GTID（fan-out）：gtidList = [0x7005, 0xC010] → 遍历两次，分别路由
+
+Router 对每个 GTID：
+  查表键 = GTID >> 6（即 TaskType 字段，见 ADR-0008）
 
 示例：
   GTID 0x7001 → TaskType = 0x01C0 (AiChat) → 查表 → AiChatBus 实例
-  GTID 0x7002 → TaskType = 0x01C0 (AiChat) → 查表 → AiChatBus 实例（可能不同）
+  GTID 0xC010 → TaskType = 0x0300 (Session) → 查表 → DataManager
 ```
 
 **热备切换**：Router 将 TaskType → 活跃实例的映射更新为新的物理地址。上游完全无感——GTID 不变，TaskType 不变，只有 Router 内部的映射变了。
@@ -323,80 +317,84 @@ sequenceDiagram
 
     User->>CLI: 输入文本
     CLI->>AG: chat
-    AG->>SD: AiChatReq{gtid, sourceAddress=SD}
-    SD->>R: AiChatReq（GTID 中 TaskType=AiChat）
-    Note over R: 提取 TaskType → 查表 → AiChatBus
+    AG->>SD: AiChatReq{gtidList:[gtid], sourceAddress=SD}
+    SD->>R: AiChatReq（gtidList）
+    Note over R: 遍历 gtidList → TaskType=AiChat → 查表 → AiChatBus
     R->>AI: AiChatReq
     Note over AI: 处理请求，组装服务层请求
-    AI->>SG: AiChatToSvcReq{gtid, sourceAddress=R}
+    AI->>SG: AiChatToSvcReq{gtidList:[gtid], sourceAddress=R}
     SG->>ApiAd: 翻译后的 HTTP 请求
     ApiAd->>ExtAPI: POST /v1/chat
 
     Note over User,ExtAPI: 上行（AI API → 用户）
 
     ExtAPI-->>ApiAd: 响应数据
-    ApiAd-->>SG: 内部格式
-    SG-->>R: AiChatFromSvcResp{gtid}
-    Note over R: 提取 TaskType → 查表 → AiChatBus
+    Note over ApiAd: 解析 → AiChatFromSvcResp{gtidList:[gtid]}
+    ApiAd-->>R: AiChatFromSvcResp<br/>（使用 sourceAddress 直达 Router）
+    Note over R: 遍历 gtidList → TaskType=AiChat → 查表 → AiChatBus
     R-->>AI: AiChatFromSvcResp
     Note over AI: 整合结果
-    AI-->>SD: AiChatResp{gtid}（直连，不走 Router）
+    AI-->>SD: AiChatResp{gtidList:[gtid]}（直连，不走 Router）
     SD-->>AG: 包装消息
     AG-->>CLI: 内部格式
     CLI-->>User: 显示结果
 ```
 
-> **关键点**：GTID 中的 TaskType 位即路由键。Router 在入向提取 TaskType 查表转发，出向消息物理直连。AiChatBus 回复 SessionData 时使用 `sourceAddress` 中记录的地址直连，无需经过 Router。
+> **关键点**：消息头为 `gtidList + sourceAddress`。Router 遍历 gtidList 对每个 GTID 提取 TaskType 位查表，单 GTID（常规）和 多 GTID（fan-out）逻辑完全统一。出向消息物理直连。
 
-- AiChatBus 直接通过 ServiceGateway 调用 AI API，无需经过中间服务 EO
+- AiChatBus 直接通过 ServiceGateway 调用 AI API，Gateway 查 Adapter 注册表转发给对应 Adapter
+- Adapter 入向使用消息头中的 `sourceAddress`（Business D 面 EO 发送时填入 Router 地址）直接回复 Router
 - AiApiAdapter 是纯粹的协议翻译器（内部消息 ↔ HTTP），不参与路由决策
 
-### 6.5 设备数据流
+### 6.5 设备数据流与 fan-out
 
-**两条路径汇入 Router，Router 做 fan-out 分发。**
+**fan-out 实现机制（Gateway 出向预埋）**：
+
+1. Gateway 收到 Business EO 的出向请求（如"读传感器X"）
+2. Gateway 查 fan-out 配置：该请求的响应是否需要额外通知 DataManager / AutomationBus
+3. 若需要 fan-out，Gateway 将额外 GTID 列表嵌入出向消息（如 `fanOutGtids: [0xC010]`）。大字段（string、vector）通过 `std::move` 零拷贝转移，仅新增小字段的微小分配。若无需 fan-out，走 `delegate()` 零拷贝转发
+4. Adapter 做出向 HTTP 请求、收 HTTP 响应——透传 GTID list，不理解其含义
+5. Adapter 入向时将所有信息（含 GTID list）打包发给 Router（`sourceAddress` 直达）
+6. Router 收到消息，遍历 gtidList，每个 GTID 独立路由到对应 Business EO
 
 ```mermaid
 sequenceDiagram
-    participant MqttDev as MQTT 设备
-    participant MqttAd as MqttAdapter
+    participant EO as Business EO
     participant SG as ServiceGateway
-    participant CanDev as CAN 设备
-    participant CanAd as CanAdapter
-    participant PG as ProtocolGateway
+    participant Ad as Adapter
+    participant Dev as 外部设备
     participant R as Router
     participant DM as DataManager
     participant AU as AutomationBus
 
-    Note over MqttDev,AU: === 智能设备路径（MQTT）===
-    MqttDev->>MqttAd: 上报数据
-    MqttAd->>SG: 规范化消息
-    SG->>R: fan-out 分发
+    Note over EO,SG: 出向（请求）
+    EO->>SG: 读传感器X（gtid=0x7005）
+    Note over SG: 查 fan-out 配置：<br/>SensorReadReq → [DataManager(0xC010)]
+    SG->>Ad: 读传感器X<br/>{gtid:0x7005, fanOutGtids:[0xC010]}
+    Ad->>Dev: 读传感器X
 
-    Note over MqttDev,AU: === 傻瓜设备路径（CAN）===
-    CanDev->>CanAd: 原始信号
-    CanAd->>PG: 原始数据
-
-    Note over PG: 过滤垃圾数据
-    Note over PG: 规范化
-
-    PG->>R: fan-out 分发
-
-    Note over R,AU: === Router fan-out 同时发给多个目标 ===
-    R->>DM: 数据落地存储
-    R->>AU: 实时消费（规则判断）
+    Note over Ad,R: 入向（响应）
+    Dev-->>Ad: 数据
+    Note over Ad: 打包 GTID list 发 Router
+    Ad-->>R: SensorData{gtidList:[0x7005,0xC010]}
+    Note over R,AU: Router 拆 GTID list 逐条路由
+    R->>EO: 原始响应 (0x7005)
+    R->>DM: fan-out 抄送 (0xC010)
 ```
+
+**fan-out 配置**由 ServiceMgr 下发至 Gateway，格式为 `出向消息类型 → [额外 GTID 列表]`。AI Chat 类消息通常无需 fan-out，传感器读数等常需要抄送 DataManager。
 
 **消费者有两种获取数据的方式**：
 
 | 方式 | 路径 | 优点 | 缺点 |
 |---|---|---|---|
 | **快路径** | 从 BusinessContext 读 DataManager 写入的冷数据 | 零消息开销，同 Flow 内完成 | 数据可能有延迟 |
-| **慢路径** | Router fan-out 时实时收到数据 | 实时，拿到最新值 | 跨 Flow，有消息开销 |
+| **慢路径** | Adapter fan-out 实时推送 | 实时，拿到最新值 | 跨 Flow，有消息开销 |
 
-**选择权在消费者。** Router 的 fan-out 能力让同一条设备数据可以同时发给 DataManager（存储）和 AutomationBus（实时消费）。
+**选择权在消费者。**
 
-- ServiceGateway 和 ProtocolGateway 都**不直接决定最终目标**——它们只负责"把干净的数据交给 Router"，由 Router 查表完成精确路由和 fan-out
-- Adapter 的订阅管理（MQTT topic 订阅、CAN 信号过滤配置）由 ServiceMgr 直接指挥
+- fan-out 配置集中在 Gateway，Adapter 只做透传——不感知全局拓扑
+- Adapter 的订阅管理（MQTT topic、CAN 信号过滤）由 ServiceMgr 直接指挥
 - 行为表逻辑（条件判断、触发规则）在 AutomationBus 中完成
 
 ---
@@ -405,9 +403,7 @@ sequenceDiagram
 
 ### 7.1 协议扩展
 
-新增智能家居协议或工业总线：
-- **智能设备**（如新 MQTT 设备）：新增 Adapter → 向 ServiceGateway 注册 → ServiceMgr 配置分发表。业务层零修改。
-- **傻瓜设备**（如新总线设备）：新增 Adapter → 向 ProtocolGateway 注册 → ServiceMgr 配置过滤规则。业务层零修改。
+新增智能家居协议或工业总线：新增 Adapter → 向 ServiceGateway 注册 → ServiceMgr 配置 Adapter 注册表与 fan-out 配置。业务层零修改。
 
 ### 7.2 跨生态编排
 
@@ -440,13 +436,12 @@ AutomationBus 作为规则引擎，不感知底层协议。一个规则可同时
 |------|------|------|
 | 无状态 EO + 外部上下文 | 采用 | 热备切换无感、可独立测试、状态可审计 |
 | 静态内存池 + 禁止堆分配 | 采用 | 确定性内存行为，嵌入式友好 |
-| GTID + sourceAddress 消息头 | 采用 | GTID 自带路由信息，sourceAddress 统一回复路径 |
+| GTID + sourceAddress 消息头 | 采用 | gtidList 支持单/多目标，Router 遍历路由逻辑统一 |
 | D 面消息经 Router 中转 | 采用 | 消息路径可控，映射集中管理 |
 | 仅业务层支持多实例 | 采用 | 会话层 I/O 密集不占 CPU，服务层瓶颈在外部设备 |
 | 应用层消息确认重传 | 废弃 | EO 崩溃不应是常态，根因应在代码质量与测试中消除 |
 | 消息体持久化缓存 | 废弃 | 仅用于配合重传，重传不做则无意义 |
-| Service 层按设备自治能力分流 | 采用 | 智能设备自带过滤走 ServiceGateway，傻瓜设备需系统主动管教走 ProtocolGateway |
-| ServiceGateway 与 ProtocolGateway 平级 | 采用 | 两者都是入口，复杂度不同但地位相同 |
+| Service 层统一入口 ServiceGateway | 采用 | 所有 Adapter 平等注册，协议差异封装在 Adapter 内部 |
 | AiApiSvc / MiHomeSvc / DeviceGateway 取消 | 采用 | Adapter → Gateway → Router 直达 Business EO，不需要中间 EO |
 | DataManager 放在 Business 层 | 采用 | 跨层写 Context 破坏分层隔离，同层内读写是自然的架构约束 |
 | Session Layer C 面重 D 面轻 | 采用 | "会话"是控制面概念；D 面剥离杂活供 Mgr 专注决策 |
@@ -495,7 +490,7 @@ flowHub/
 │   │   │
 │   │   └── service/
 │   │       ├── ServiceGateway.hpp / cpp
-│   │       ├── ProtocolGateway.hpp / cpp
+
 │   │       ├── AiApiAdapter.hpp / cpp
 │   │       ├── MqttAdapter.hpp / cpp
 │   │       ├── CanAdapter.hpp / cpp        （预留）
@@ -533,8 +528,7 @@ flowHub/
 | 业务层数据面（D-Plane） | `功能 + Bus` | AiChatBus, AutomationBus, SceneBus |
 | 业务层路由 | `Router` | 固定名称 |
 | 业务层数据管理 | `DataManager` | 固定名称 |
-| 服务层智能设备入口 | `ServiceGateway` | 固定名称 |
-| 服务层傻瓜设备入口 | `ProtocolGateway` | 固定名称 |
+| 服务层统一外部入口 | `ServiceGateway` | 固定名称 |
 | 协议适配器 | `协议 + Adapter` | CLIAdapter, WsAdapter, MqttAdapter, AiApiAdapter |
 | 接入层网关 | `AccessGateway` | 固定名称 |
 
