@@ -1,12 +1,16 @@
-// src/fw/ActorBase.hpp
-// Framework-agnostic actor abstraction.
+// src/fw/EoBase.hpp
+// EO 基类 — 对 CAF event_based_actor 的项目级封装。
 //
-// Hides CAF-specific types and APIs behind project-neutral names.
-// If the underlying actor framework changes, only this file and
-// Macros.hpp need updating — business actors are unaffected.
+// 业务 EO 继承此类，获得消息注册/收发/转发/延迟/请求-响应等能力，
+// 无需接触 caf:: 命名空间。底层 actor 框架变更时，仅需修改本层文件：
+//   - EoTypes.hpp   (类型别名)
+//   - EoEnv.hpp     (actor_system 包装、孵化、匿名发送)
+//   - EoBase.hpp    (actor 基类)
+// 业务代码不受影响。
 
 #pragma once
 
+#include "fw/EoEnv.hpp"
 #include "fw/EoTypes.hpp"
 #include "generated/message/Messages.hpp"
 #include "utils/CrtpBase.hpp"
@@ -24,6 +28,10 @@ class EoBase : public caf::event_based_actor, public utils::CrtpBase<Derived>
 {
   public:
     explicit EoBase(EoConfig &cfg) : caf::event_based_actor(cfg) {}
+
+    // 编译期标签：派生类覆盖为 true 表示 handler 中可能阻塞。
+    // createEo 据此自动选择独立线程（detached）或共享池。
+    static constexpr bool kMayBlock = false;
 
   protected:
     // ----- message handler registration -------------------------------
@@ -91,14 +99,14 @@ class EoBase : public caf::event_based_actor, public utils::CrtpBase<Derived>
     template <typename Msg>
     static void anonSendTo(EoAddress target, Msg &&msg)
     {
-        caf::anon_mail(std::forward<Msg>(msg)).send(target);
+        fw::anonSendTo(target, std::forward<Msg>(msg));
     }
 
     // ----- request-response -----------------------------------------
     // 发送请求并注册异步回调（then 模式：等待响应期间可处理其他消息）
     // 仅用于 C 面直接通信，不经过 Router 的 D 面流转请使用 sendTo/delegateTo。
     template <typename Msg, typename OnValue, typename OnError>
-    void requestThen(EoAddress target, caf::timespan timeout, Msg &&msg, OnValue &&onValue,
+    void requestThen(EoAddress target, EoDuration timeout, Msg &&msg, OnValue &&onValue,
                      OnError &&onError)
     {
         this->mail(std::forward<Msg>(msg))
@@ -111,6 +119,13 @@ class EoBase : public caf::event_based_actor, public utils::CrtpBase<Derived>
     EoAddress myAddress()
     {
         return caf::actor_cast<EoAddress>(this);
+    }
+
+    // 返回当前正在处理的消息的发送者地址。
+    // 仅在 handler 执行期间有效（由 CAF 框架在调 handler 前自动设置）。
+    EoAddress senderAddress()
+    {
+        return caf::actor_cast<EoAddress>(this->current_sender());
     }
 
     void stop()
