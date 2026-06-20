@@ -1,2 +1,6 @@
-add_library(serviceLib INTERFACE)
-target_include_directories(serviceLib INTERFACE ${CMAKE_SOURCE_DIR}/src)
+add_library(serviceLib STATIC
+    AiApiAdapter.cpp
+    ServiceGateway.cpp
+)
+target_include_directories(serviceLib PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_link_libraries(serviceLib PUBLIC CAF::core utilsLib)

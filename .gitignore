@@ -25,6 +25,9 @@ _deps/
 # Language server
 .cache/
 
-#Plugin
+# Python
+__pycache__/
+
+# Plugin
 .continue/
 .github/

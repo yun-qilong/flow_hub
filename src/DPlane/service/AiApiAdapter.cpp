@@ -56,14 +56,14 @@ void AiApiAdapter::handle(const AiChatServiceReq &req)
     std::cout << "[AiApiAdapter] HTTP " << response.httpCode
               << " success=" << (resp.success ? "true" : "false") << "\n";
 
-    auto sender = this->senderAddress();
-    if (sender)
+    auto targetAddr = req.head.sourceAddress;
+    if (targetAddr)
     {
-        sendTo(sender, std::move(resp));
+        sendTo(targetAddr, std::move(resp));
     }
     else
     {
-        std::cerr << "[AiApiAdapter] WARNING: no sender, dropping response\n";
+        std::cerr << "[AiApiAdapter] WARNING: no sourceAddress in request, dropping response\n";
     }
 }
 

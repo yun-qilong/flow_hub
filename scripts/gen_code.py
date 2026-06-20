@@ -70,9 +70,13 @@ TYPE_MAP = {
     "double": ("double",      ""),
     "actor":  ("fw::EoAddress", '"fw/EoTypes.hpp"'),
     "TaskType": ("common::TaskType", '"generated/TaskType.hpp"'),
+    "vector": ("std::vector", "<vector>"),
 }
 
-ARRAY_RE = re.compile(r"^(\w+)\[(\d+)\]$")
+# Matches: TypeName, TypeName<Args>, or TypeName[N]
+TYPE_NAME_RE = re.compile(r"^(\w+)(?:<([^>]+)>)?(?:\[(\d+)\])?$")
+
+ARRAY_RE = re.compile(r"^(\w+)(?:<[^>]+>)?\[(\d+)\]$")
 
 # ---- category detection ------------------------------------------------
 # Maps context subdirectory name → GTID Category field value (ADR-0008)
@@ -101,7 +105,10 @@ def get_category_for_mt(filepath: Path, src_root: Path) -> int | None:
 # ---- include / define helpers ------------------------------------------
 
 def parse_defines(filepath: Path) -> dict[str, tuple[str, str]]:
-    """Parse 'define Name = type' lines, return {name: (cpp_type, include)}."""
+    """Parse 'define Name = type' lines, return {name: (cpp_type, include)}.
+
+    Supports: define Name = Type  and  define Name = vector<Type>
+    """
     defines: dict[str, tuple[str, str]] = {}
     if not filepath.exists():
         return defines
@@ -110,14 +117,14 @@ def parse_defines(filepath: Path) -> dict[str, tuple[str, str]]:
             line = line.strip()
             if not line or line.startswith("#"):
                 continue
-            m = re.match(r"^define\s+(\w+)\s*=\s*(\w+)$", line)
+            m = re.match(r"^define\s+(\w+)\s*=\s*(\w+(?:<[^>]+>)?)$", line)
             if not m:
                 continue
             name = m.group(1)
-            mt_type = m.group(2)
-            entry = TYPE_MAP.get(mt_type)
+            mt_type_raw = m.group(2)
+            entry = resolve_type_entry(mt_type_raw)
             if entry is None:
-                print(f"WARNING: {filepath}: unknown type '{mt_type}' for define '{name}'")
+                print(f"WARNING: {filepath}: unknown type '{mt_type_raw}' for define '{name}'")
                 continue
             defines[name] = entry
     return defines
@@ -184,6 +191,10 @@ def parse_mt(filepath: Path, src_root: Path, mt_hpp_map: dict[str, str]) -> list
     """Parse one .mt file.
 
     Returns list of definition dicts.  Includes resolved using mt_hpp_map.
+
+    include directive adds #include to the generated header and pulls in
+    define statements.  Fields from included structs are NOT auto-expanded;
+    each message must explicitly declare its header field (e.g. MsgHead head).
     """
     definitions: list[dict] = []
     current: dict | None = None
@@ -253,10 +264,10 @@ def parse_mt(filepath: Path, src_root: Path, mt_hpp_map: dict[str, str]) -> list
                 current["fields"].append(("__padding__", None))
                 continue
 
-            m = re.match(r"^(\w+)(?:\[(\d+)\])?\s+(\w+)$", stripped)
+            m = re.match(r"^(\w+(?:<[^>]+>)?)(?:\[(\d+)\])?\s+(\w+)$", stripped)
             if not m:
                 print(f"WARNING: {filepath}:{lineno}: "
-                      f"expected '<type> <name>' or '<type>[<size>] <name>', got '{stripped}'")
+                      f"expected '<type> <name>', '<Type<Args>> <name>', or '<type>[<size>] <name>', got '{stripped}'")
                 continue
 
             base_type = m.group(1)
@@ -309,29 +320,65 @@ def generate_types_hpp(defines: dict[str, tuple[str, str]]) -> str:
 
 # ---- codegen helpers ---------------------------------------------------
 
+def resolve_type_entry(mt_type_raw: str) -> tuple[str, str] | None:
+    """Resolve a .mt type expression to (cpp_type_str, include_header_or_empty).
+
+    Handles:
+      - simple:  uint16  → ("uint16_t", "<cstdint>")
+      - template: vector<uint16_t> → ("std::vector<uint16_t>", "<vector>")
+      - array:    uint8[16] → handled by resolve_cpp_type (caller)
+      - unknown:  returns (mt_type_raw, "")
+    """
+    m = TYPE_NAME_RE.match(mt_type_raw)
+    if not m:
+        return None
+    base = m.group(1)
+    targs = m.group(2)  # e.g. "uint16_t" for vector<uint16_t>, or None
+
+    entry = TYPE_MAP.get(base)
+    if entry is None:
+        # Unknown type — return as-is (may be a struct/context defined elsewhere)
+        return (mt_type_raw, "")
+
+    cpp_base, inc = entry
+    if targs is not None:
+        # Template type: e.g. vector<uint16_t> → recursively resolve template arg
+        targ_entry = resolve_type_entry(targs)
+        targ_cpp = targ_entry[0] if targ_entry else targs
+        cpp = f"{cpp_base}<{targ_cpp}>"
+    else:
+        cpp = cpp_base
+    return (cpp, inc)
+
+
 def resolve_cpp_type(mt_type: str) -> str:
     m = ARRAY_RE.match(mt_type)
     if m:
-        base = m.group(1)
+        base_raw = m.group(1)
         size = m.group(2)
-        inner = TYPE_MAP.get(base, (base, ""))[0]
+        entry = resolve_type_entry(base_raw)
+        inner = entry[0] if entry else base_raw
         return f"std::array<{inner}, {size}>"
-    return TYPE_MAP.get(mt_type, (mt_type, ""))[0]
+    entry = resolve_type_entry(mt_type)
+    if entry:
+        return entry[0]
+    return mt_type
 
 
 def field_includes(fields: list, known_types: dict[str, str] | None = None) -> list[str]:
     """Collect #include lines needed by field types (standard types only)."""
     incs: set[str] = set()
-    for ftype, _ in fields:
-        if ftype == "__padding__":
+    for ftype_raw, _ in fields:
+        if ftype_raw == "__padding__":
             continue
-        if ARRAY_RE.match(ftype):
+        if ARRAY_RE.match(ftype_raw):
             incs.add("<array>")
-        base = ARRAY_RE.match(ftype).group(1) if ARRAY_RE.match(ftype) else ftype
-        # 自定义类型通过 mt 的 include 指令手动引入，此处不自动探测
-        inc = TYPE_MAP.get(base, ("", ""))[1]
-        if inc:
-            incs.add(inc)
+        # Resolve type to get include (supports template types like vector<uint16_t>)
+        entry = resolve_type_entry(ftype_raw)
+        if entry:
+            inc = entry[1]
+            if inc:
+                incs.add(inc)
     return sorted(incs)
 
 
@@ -542,6 +589,9 @@ def generate_business_type_hpp(contexts: list[dict]) -> str:
     out.append("#pragma once")
     out.append("")
     out.append("#include <cstdint>")
+    out.append("#include <type_traits>")
+    out.append("")
+    out.append('#include "caf/all.hpp"')
     out.append("")
     out.append("namespace common")
     out.append("{")
@@ -578,6 +628,19 @@ def generate_business_type_hpp(contexts: list[dict]) -> str:
             out.append(f"    {short} = 0x{val:04X}{comma}  // cat=0x{cat:X} sub={sub}")
         out.append("};")
 
+    out.append("")
+    out.append("// CAF 序列化支持 — 自动生成，将 enum 映射为其底层整数类型")
+    out.append("template <class Inspector>")
+    out.append("bool inspect(Inspector &f, TaskType &x)")
+    out.append("{")
+    out.append("    auto tmp = static_cast<std::underlying_type_t<TaskType>>(x);")
+    out.append("    if (f.value(tmp))")
+    out.append("    {")
+    out.append("        x = static_cast<TaskType>(tmp);")
+    out.append("        return true;")
+    out.append("    }")
+    out.append("    return false;")
+    out.append("}")
     out.append("")
     out.append("} // namespace common")
     out.append("")
@@ -758,9 +821,11 @@ def main() -> int:
     all_defines: dict[str, tuple[str, str]] = {}
     if type_dir.exists():
         for mtf in sorted(type_dir.glob("*.mt")):
-            for name, entry in parse_defines(mtf).items():
+            parsed = parse_defines(mtf)
+            for name, entry in parsed.items():
                 all_defines[name] = entry
-            print(f"  type/{mtf.name}: {len(parse_defines(mtf))} define(s)")
+                TYPE_MAP[name] = entry  # 同步到全局 TYPE_MAP，供后续字段解析使用
+            print(f"  type/{mtf.name}: {len(parsed)} define(s)")
 
     # 2b. Parse message/
     all_messages: list[dict] = []

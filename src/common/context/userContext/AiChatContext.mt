@@ -1,11 +1,6 @@
-include "context/ConfigEntry.mt"
-
 context AiChatContext
-    string conversationId
+    uint8[64] modelName
     int32 turnCount
-    cacheLinePadding
-    string modelName
     double temperature
-    cacheLinePadding
-    int64 lastActiveTime
-    ConfigEntry configEntry
+    int32 messagesLen
+    uint8[16384] messagesBuffer
