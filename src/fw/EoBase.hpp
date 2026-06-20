@@ -12,7 +12,6 @@
 
 #include "fw/EoEnv.hpp"
 #include "fw/EoTypes.hpp"
-#include "generated/message/Messages.hpp"
 #include "utils/CrtpBase.hpp"
 
 #include <iostream>

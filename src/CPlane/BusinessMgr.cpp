@@ -12,12 +12,6 @@ using namespace common::message;
 
 BusinessMgr::BusinessMgr(EoConfig &cfg) : EoBase<BusinessMgr>(cfg) {}
 
-void BusinessMgr::init()
-{
-    onMsg<InternalPing>();
-    onMsg<InternalPong>();
-}
-
 void BusinessMgr::handle(const InternalPing &msg)
 {
     std::cout << "[BusinessMgr] received InternalPing: " << msg.message << "\n";

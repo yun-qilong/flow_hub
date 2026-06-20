@@ -61,7 +61,7 @@ sys.await_all_actors_done();
 | 日期 | 修订 |
 |------|------|
 | 2026-06-18 | 初版 |
-| 2026-06-18 | 移除 `createDetachedEo`、`createStandaloneEo`，`createEo` 改为基于 `kMayBlock` 自动选择线程模式；新增 `senderAddress()` |
+| 2026-06-21 | 增补 EO 消息 include 约定：init() 内联 .hpp，不 include 消息头 |
 
 ## 影响
 
@@ -69,3 +69,36 @@ sys.await_all_actors_done();
 - 新增 `src/fw/EoEnv.hpp` 文件
 - `EoBase` 静态方法 `anonSendTo` 改为委托 `fw::anonSendTo`
 - `commonLib` 新增 `CAF::core` 依赖（因 `TaskType` 需要 CAF 序列化支持）
+
+---
+
+## EO 消息 include 约定（2026-06-21 增补）
+
+### 规则
+
+1. **EO 的 `.hpp` 不 `#include` 任何消息头文件**。消息类型定义由 `EoBase.hpp` → `EoEnv.hpp` → `Messages.hpp` 链路间接提供。
+2. **`init()` 实现在 `.hpp` 中内联**，以一眼看出该 EO 处理哪些消息：
+
+```cpp
+class Foo : public fw::EoBase<Foo>
+{
+protected:
+    void init() override
+    {
+        onMsg<common::message::MsgA>();
+        onMsg<common::message::MsgB>();
+    }
+};
+```
+
+3. EO 的 `.hpp` 只 include 框架头（`fw/EoBase.hpp`）和业务依赖（`TaskPool.hpp`、`HttpClient.hpp` 等），不 include 消息头。
+
+### 理由
+
+- **可读性**：打开 `.hpp` 即看到消息列表，无需跳转 `.cpp`
+- **避免冗余**：消息类型通过 `EoEnv.hpp` → `Messages.hpp` 全局可用，显式 include 仅为文档作用
+- **维护性**：新增/删除消息处理时只需改 `init()` 一处，无需同步 include
+
+### 不适用 lint 强制
+
+当前项目规模小，EO 数量有限，不作 clang-tidy `include-what-you-use` 强制。

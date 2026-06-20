@@ -19,7 +19,11 @@ class BusinessMgr : public fw::EoBase<BusinessMgr>
     void handle(const common::message::InternalPong &msg);
 
   protected:
-    void init() override;
+    void init() override
+    {
+        onMsg<common::message::InternalPing>();
+        onMsg<common::message::InternalPong>();
+    }
 };
 
 } // namespace CPlane
