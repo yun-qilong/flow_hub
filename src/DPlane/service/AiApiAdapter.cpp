@@ -36,10 +36,10 @@ void AiApiAdapter::handle(const AiChatServiceReq &req)
 
     auto response = callApi(req);
 
-    AiChatResp resp;
+    AiChatServiceResp resp;
     auto serviceGatewayAddr = this->senderAddress();
     resp.head.gtidList = req.head.gtidList;
-    resp.head.sourceAddress = serviceGatewayAddr;
+    resp.head.sourceAddress = req.head.sourceAddress;
     resp.success = response.isSuccess();
     if (response.isSuccess())
     {

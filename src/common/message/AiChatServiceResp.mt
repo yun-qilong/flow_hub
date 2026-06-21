@@ -1,6 +1,6 @@
 include message/MsgHead.mt
 
-message AiChatResp
+message AiChatServiceResp
     MsgHead head
     bool success
     string content

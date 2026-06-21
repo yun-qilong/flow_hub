@@ -105,14 +105,41 @@ struct AiChatServiceReq {
 
 | 消息 | 变更 |
 |------|------|
-| `AiChatReq` | `include MsgHead` + `MsgHead head`，移除 `uint16 gtid` 和 `actor replyTo` |
-| `AiChatResp` | `include MsgHead` + `MsgHead head`，移除 `uint16 gtid` |
+| `AiChatBusinessReq` | `include MsgHead` + `MsgHead head`，移除 `uint16 gtid` 和 `actor replyTo` |
+| `AiChatBusinessResp` | `include MsgHead` + `MsgHead head`，移除 `uint16 gtid` |
 | `AiChatServiceReq` | `include MsgHead` + `MsgHead head` |
 | `AiChatServiceResp` | `include MsgHead` + `MsgHead head` |
-| `SessionCloseReq` | `include MsgHead` + `MsgHead head`，移除 `uint16 gtid` |
-| `SessionSetupResp` | `include MsgHead` + `MsgHead head`，移除 `uint16 gtid` |
+| `SessionCloseSessionReq` | `include MsgHead` + `MsgHead head`，移除 `uint16 gtid` |
+| `SessionSetupSessionResp` | `include MsgHead` + `MsgHead head`，移除 `uint16 gtid` |
 
 业务代码对应变更：`.gtid` → `.head.gtidList[0]`，`.replyTo` → `.head.sourceAddress`。
+
+### 消息命名规范
+
+**格式：`{业务名}{接收端层级名}{Req|Resp}`**
+
+| 组成部分 | 含义 | 示例 |
+|----------|------|------|
+| 业务名 | 业务领域标识（PascalCase） | `AiChat`、`SessionSetup`、`SessionClose` |
+| 接收端层级名 | 消息接收方所在架构层级（PascalCase） | `Business`、`Service`、`Session` |
+| Req/Resp | 请求或响应 | `Req`、`Resp` |
+
+**示例**：业务名为 `AiChat`，接收端为 Service 层（发起方为 Business 层），则往返消息命名为 `AiChatServiceReq` / `AiChatServiceResp`。响应始终跟随请求的接收端层级命名，不因响应自身的接收端而改变。
+
+**中转不变原则**：消息经过 Gateway、Router 等中间组件中转时，消息类型保持不变。只要消息体内容无需修改，即直接透传，不因中转环节改变消息名。对于 fan-out 等需要修改消息头的场景（如在 `gtidList` 中追加目标 GTID），消息类型同样不变——Gateway 仅修改消息头字段，消息类型语义未变。
+
+**已迁移消息对照**：
+
+| 旧名 | 新名 | 变更原因 |
+|------|------|----------|
+| `AiChatReq` | `AiChatBusinessReq` | 接收端为 Business 层（AiChatBus） |
+| `AiChatResp` | `AiChatServiceResp` / `AiChatBusinessResp` | 原 `AiChatResp` 承担两个角色，拆分：AiApiAdapter→AiChatBus 为 `AiChatServiceResp`，AiChatBus→CliAdapter 为 `AiChatBusinessResp` |
+| `SessionSetupReq` | `SessionSetupSessionReq` | 接收端为 Session 层（SessionMgr） |
+| `SessionSetupResp` | `SessionSetupSessionResp` | 接收端为 Session 层 |
+| `SessionCloseReq` | `SessionCloseSessionReq` | 接收端为 Session 层（SessionMgr） |
+| `AiChatServiceReq` | 不变 | 已符合规范 |
+| — | `AiChatServiceResp` | 新增：AiApiAdapter 对 `AiChatServiceReq` 的响应 |
+
 
 ### AiApiAdapter 回复路径修正
 
@@ -164,7 +191,7 @@ gtidList: StaticVector<uint16_t, 8>  // 或 std::array
 - **Router**：从"提取单个 GTID 路由"改为"遍历 gtidList 逐条路由"。行为更简单。当前阶段仅取 `gtidList[0]`，fan-out 遍历留待后续
 - **Gateway**：fan-out 嵌入从"填 fanOutGtids 字段"改为"往 gtidList 里追加一项"
 - **AiApiAdapter**：回复目标从 `senderAddress()`（原路返回）改为 `req.sourceAddress`（按消息头指定地址），使回复可经 Router 回到 AiChatBus 而非直接回 ServiceGateway
-- **AiChatBus**：发送 `AiChatServiceReq` 时填充 `sourceAddress = routerAddr_`（Router 地址通过 `ModifyReq` 注入），确保 AiApiAdapter 的回复经 Router 路由
+- **AiChatBus**：发送 `AiChatServiceReq` 时填充 `sourceAddress = routerAddr_`（Router 地址通过 `ModifyReq` 注入），确保 AiApiAdapter 的 `AiChatServiceResp` 回复经 Router 路由。AiChatBus 收到 `AiChatServiceResp` 后转换为 `AiChatBusinessResp` 发给 SessionData
 - **Adapter**：透传 gtidList，无需关心长度
 - **SessionData**：包装消息时填 `gtidList: [gtid]`（单元素列表）
 - **gen_code.py**：新增 `vector` 类型、`Type<Args>` 模板语法、`include` 字段注入机制
