@@ -8,6 +8,8 @@
 
 #include "fw/EoBase.hpp"
 
+#include <array>
+
 namespace DPlane::business
 {
 
@@ -16,30 +18,60 @@ class Router : public fw::EoBase<Router>
   public:
     explicit Router(fw::EoConfig &cfg);
 
-    // message handlers
-    void handle(const common::message::ModifyReq &req);
-    void handle(const common::message::InternalPing &msg);
-    void handle(const common::message::AiChatReq &req);
-    void handle(const common::message::AiChatResp &resp);
+    void handle(const common::message::RouterConfigReq &req);
+    void handle(const common::message::RouterReconfigReq &req);
+    void handle(common::message::AiChatBusinessReq req);
+    void handle(common::message::AiChatServiceResp resp);
 
   protected:
     void init() override
     {
-        onMsg<common::message::ModifyReq>();
-        onMsg<common::message::InternalPing>();
-        onMsg<common::message::AiChatReq>();
-        onMsg<common::message::AiChatResp>();
+        onMsg<common::message::RouterConfigReq>();
+        onMsg<common::message::RouterReconfigReq>();
+        onMsg<common::message::AiChatBusinessReq>();
+        onMsg<common::message::AiChatServiceResp>();
     }
 
   private:
-    fw::EoAddress businessMgr;
-    fw::EoAddress aiChatBusAddr;
+    static constexpr uint16_t kRouteTableSize = 1024;
+    std::array<fw::EoAddress, kRouteTableSize> routeTable_{};
 
-  public:
-    // 地址注入（由 main 在 spawn 后调用）
-    void setAiChatBusAddr(fw::EoAddress addr)
+    fw::EoAddress getTargetEoAddress(uint16_t gtid) const
     {
-        aiChatBusAddr = addr;
+        return routeTable_[gtid >> 6];
+    }
+
+    template <typename Msg>
+    void routeAndForward(Msg msg, const char *msgName)
+    {
+        const auto &list = msg.head.gtidList;
+        size_t n = list.size();
+        if (n == 0)
+        {
+            std::cerr << "[Router] ERROR: empty gtidList, dropping " << msgName << "\n";
+            return;
+        }
+
+        for (size_t i = 0; i < n - 1; ++i)
+        {
+            auto addr = getTargetEoAddress(list.at(i));
+            if (addr)
+            {
+                std::cout << "[Router] routing " << msgName << " to Business EO (copy)\n";
+                sendTo(addr, Msg{msg});
+            }
+        }
+
+        auto lastAddr = getTargetEoAddress(list.at(n - 1));
+        if (lastAddr)
+        {
+            std::cout << "[Router] routing " << msgName << " to Business EO (delegate)\n";
+            delegateTo(lastAddr, std::move(msg));
+        }
+        else
+        {
+            std::cerr << "[Router] ERROR: last GTID no route, dropping " << msgName << "\n";
+        }
     }
 };
 

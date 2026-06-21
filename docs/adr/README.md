@@ -21,6 +21,7 @@
 | [0016](./0016-eo-env-wrapper.md) | 引入 EoEnv 包装层，彻底隐藏 CAF | 已采纳 |
 | [0017](./0017-mayblock-compile-time-tag.md) | 编译期标签 `kMayBlock` 自动选择 Actor 线程模式 | 已采纳 |
 | [0018](./0018-eo-zero-copy-delegate.md) | EoBase 消息转发零拷贝优化（onMsg move-aware + delegateTo const 拦截） | 已采纳 |
+| [0019](./0019-router-route-table.md) | Router 路由表实现——定长数组 + Config/Reconfig 协议 + 混合转发策略 | 已采纳 |
 
 ## 模板
 
