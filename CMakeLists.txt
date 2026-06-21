@@ -27,6 +27,9 @@ if(FLOWHUB_BUILD_TESTS)
     FetchContent_MakeAvailable(googletest)
 endif()
 
+# ---- 依赖：libcurl（HTTP 通信）----------------------------------
+find_package(CURL REQUIRED)
+
 # ---- 代码生成 ----------------------------------------------------
 # 自动收集所有 .mt 文件，新增 .mt 无需手动注册
 file(GLOB_RECURSE MT_SOURCES CONFIGURE_DEPENDS

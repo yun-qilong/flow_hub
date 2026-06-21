@@ -117,6 +117,17 @@ class EoBase : public caf::event_based_actor, public utils::CrtpBase<Derived>
             .then(std::forward<OnValue>(onValue), std::forward<OnError>(onError));
     }
 
+    // ----- request-response (receiver side) -------------------------
+    // 回复当前请求的发送方。仅当发送方使用 request()/requestThen() 时，
+    // 此回复才会被框架匹配到对应的 pending request 并触发 .then() 回调。
+    // 若发送方是 fire-and-forget，replyToSender 的效果等同于 sendTo。
+    template <typename Msg>
+    void replyToSender(Msg &&msg)
+    {
+        auto rp = this->make_response_promise();
+        rp.deliver(caf::make_message(std::forward<Msg>(msg)));
+    }
+
     // ----- self address ---------------------------------------------
     // 返回当前 EO 的地址引用，用于填入消息体供对端回消息时使用。
     EoAddress myAddress()

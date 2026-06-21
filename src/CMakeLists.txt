@@ -2,7 +2,7 @@
 add_subdirectory(fw)
 add_subdirectory(common)
 add_subdirectory(utils)
-#add_subdirectory(access)
+add_subdirectory(access)
 add_subdirectory(CPlane)
 add_subdirectory(DPlane)
 
@@ -21,5 +21,5 @@ target_link_libraries(flowhub PRIVATE
     commonLib
     cplaneLib
     dplaneLib
-    #accessLib
+    accessLib
 )

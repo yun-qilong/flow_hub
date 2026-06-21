@@ -1,0 +1,2 @@
+message RouterConfigResp
+    bool success

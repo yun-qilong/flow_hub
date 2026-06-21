@@ -1,2 +1,6 @@
-add_library(utilsLib INTERFACE)
-target_include_directories(utilsLib INTERFACE ${CMAKE_SOURCE_DIR}/src)
+add_library(utilsLib STATIC
+    JsonCoDec.cpp
+    HttpClient.cpp
+)
+target_include_directories(utilsLib PUBLIC ${CMAKE_SOURCE_DIR}/src)
+target_link_libraries(utilsLib PUBLIC CURL::libcurl)

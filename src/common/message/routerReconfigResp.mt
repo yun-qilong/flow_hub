@@ -1,0 +1,2 @@
+message RouterReconfigResp
+    bool success
