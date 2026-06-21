@@ -78,6 +78,9 @@ TYPE_NAME_RE = re.compile(r"^(\w+)(?:<([^>]+)>)?(?:\[(\d+)\])?$")
 
 ARRAY_RE = re.compile(r"^(\w+)(?:<[^>]+>)?\[(\d+)\]$")
 
+# Set of enum type names (populated during parsing)
+ENUM_TYPES: set[str] = set()
+
 # ---- category detection ------------------------------------------------
 # Maps context subdirectory name → GTID Category field value (ADR-0008)
 CATEGORY_DIRS = {
@@ -104,30 +107,82 @@ def get_category_for_mt(filepath: Path, src_root: Path) -> int | None:
 
 # ---- include / define helpers ------------------------------------------
 
-def parse_defines(filepath: Path) -> dict[str, tuple[str, str]]:
-    """Parse 'define Name = type' lines, return {name: (cpp_type, include)}.
+def parse_type_file(filepath: Path) -> tuple[dict[str, tuple[str, str]], list[dict]]:
+    """Parse a type/ .mt file.
 
-    Supports: define Name = Type  and  define Name = vector<Type>
+    Handles 'define Name = Type' and 'enum Name : Type' blocks.
+
+    Returns:
+      defines: {name: (cpp_type, include)}
+      enums:   list of enum dicts {name, base_type, values: [(name, val), ...], file}
     """
     defines: dict[str, tuple[str, str]] = {}
+    enums: list[dict] = []
+
     if not filepath.exists():
-        return defines
+        return defines, enums
+
     with open(filepath) as f:
-        for line in f:
-            line = line.strip()
-            if not line or line.startswith("#"):
-                continue
-            m = re.match(r"^define\s+(\w+)\s*=\s*(\w+(?:<[^>]+>)?)$", line)
-            if not m:
-                continue
-            name = m.group(1)
-            mt_type_raw = m.group(2)
+        lines = f.readlines()
+
+    i = 0
+    while i < len(lines):
+        raw = lines[i].rstrip()
+        stripped = raw.strip()
+        i += 1
+
+        if not stripped or stripped.startswith("#"):
+            continue
+
+        # define Name = Type
+        dm = re.match(r"^define\s+(\w+)\s*=\s*(\w+(?:<[^>]+>)?)$", stripped)
+        if dm:
+            name = dm.group(1)
+            mt_type_raw = dm.group(2)
             entry = resolve_type_entry(mt_type_raw)
             if entry is None:
                 print(f"WARNING: {filepath}: unknown type '{mt_type_raw}' for define '{name}'")
                 continue
             defines[name] = entry
-    return defines
+            continue
+
+        # enum Name : Type
+        em = re.match(r"^enum\s+(\w+)\s*:\s*(\w+)$", stripped)
+        if em:
+            enum_name = em.group(1)
+            base_type_raw = em.group(2)
+            base_entry = resolve_type_entry(base_type_raw)
+            cpp_base = base_entry[0] if base_entry else base_type_raw
+
+            values: list[tuple[str, int]] = []
+            next_val = 0
+            while i < len(lines):
+                vraw = lines[i].rstrip()
+                vstripped = vraw.strip()
+                i += 1
+                if not vstripped or vstripped.startswith("#"):
+                    continue
+                if not vraw.startswith((" ", "\t")):
+                    i -= 1
+                    break
+                vm = re.match(r"^(\w+)(?:\s*=\s*(-?\d+))?$", vstripped)
+                if vm:
+                    val_name = vm.group(1)
+                    explicit = vm.group(2)
+                    if explicit is not None:
+                        next_val = int(explicit)
+                    values.append((val_name, next_val))
+                    next_val += 1
+
+            enums.append({
+                "name": enum_name,
+                "base_type": cpp_base,
+                "values": values,
+                "file": str(filepath),
+            })
+            continue
+
+    return defines, enums
 
 
 # ---- include resolution ------------------------------------------------
@@ -230,7 +285,7 @@ def parse_mt(filepath: Path, src_root: Path, mt_hpp_map: dict[str, str]) -> list
                     hpp = mt_hpp_map.get(inc_key, mt_rel_to_hpp_fallback(inc_key))
                     includes.append(hpp)
                     # Pull in define statements from the included file
-                    for name, entry in parse_defines(inc_path).items():
+                    for name, entry in parse_type_file(inc_path)[0].items():
                         TYPE_MAP[name] = entry
                     continue
 
@@ -293,6 +348,62 @@ def mt_rel_to_hpp_fallback(mt_rel_path: str) -> str:
     return hpp.replace("common/", "generated/", 1)
 
 
+# ---- codegen: enum ----------------------------------------------------
+
+def generate_enum_hpp(enum_def: dict) -> str:
+    """Generate an enum class header with CAF inspect + to_string overload."""
+    name = enum_def["name"]
+    base = enum_def["base_type"]
+    values = enum_def["values"]
+
+    out: list[str] = []
+    out.append(f"// Auto-generated from {Path(enum_def['file']).name} — DO NOT EDIT")
+    out.append("")
+    out.append("#pragma once")
+    out.append("")
+    out.append("#include <cstdint>")
+    out.append('#include "caf/all.hpp"')
+    out.append("")
+    out.append("namespace common")
+    out.append("{")
+    out.append("")
+    out.append(f"enum class {name} : {base}")
+    out.append("{")
+    for i, (vname, vval) in enumerate(values):
+        comma = "," if i < len(values) - 1 else ""
+        out.append(f"    {vname} = {vval}{comma}")
+    out.append("};")
+    out.append("")
+
+    # CAF serialization
+    out.append(f"template <class Inspector>")
+    out.append(f"bool inspect(Inspector &f, {name} &x)")
+    out.append("{")
+    out.append(f"    auto tmp = static_cast<std::underlying_type_t<{name}>>(x);")
+    out.append(f"    if (f.value(tmp))")
+    out.append(f"    {{")
+    out.append(f"        x = static_cast<{name}>(tmp);")
+    out.append(f"        return true;")
+    out.append(f"    }}")
+    out.append(f"    return false;")
+    out.append(f"}}")
+    out.append("")
+
+    # to_string overload
+    out.append(f"inline const char* to_string({name} v)")
+    out.append("{")
+    out.append(f"    switch (v)")
+    out.append(f"    {{")
+    for vname, _ in values:
+        out.append(f'        case {name}::{vname}: return "{vname}";')
+    out.append(f'        default: return "UNKNOWN";')
+    out.append(f"    }}")
+    out.append(f"}}")
+    out.append("")
+    out.append("} // namespace common")
+    out.append("")
+    return "\n".join(out)
+
 # ---- codegen: type aliases ---------------------------------------------
 
 def generate_types_hpp(defines: dict[str, tuple[str, str]]) -> str:
@@ -337,6 +448,9 @@ def resolve_type_entry(mt_type_raw: str) -> tuple[str, str] | None:
 
     entry = TYPE_MAP.get(base)
     if entry is None:
+        # Enum type — include its generated header
+        if mt_type_raw in ENUM_TYPES:
+            return (f"common::{mt_type_raw}", f'"generated/type/{mt_type_raw}.hpp"')
         # Unknown type — return as-is (may be a struct/context defined elsewhere)
         return (mt_type_raw, "")
 
@@ -391,6 +505,8 @@ def _to_string_scalar(mt_type: str, access_expr: str,
     # 自定义类型（.mt 定义的 struct/context），调其 to_string()
     if known_types and mt_type in known_types:
         return f"{access_expr}.to_string()"
+    if mt_type in ENUM_TYPES:
+        return f"to_string({access_expr})"
     return f"std::to_string({access_expr})"
 
 
@@ -510,7 +626,8 @@ def generate_context_hpp(defn: dict,
         if inc.startswith("<"):
             out.append(f"#include {inc}")
         else:
-            out.append(f'#include "{inc}"')
+            stripped = inc.strip('"')
+            out.append(f'#include "{stripped}"')
     out.append("")
     out.append("namespace common::context")
     out.append("{")
@@ -817,15 +934,19 @@ def main() -> int:
     mt_hpp_map = build_mt_hpp_map(src_root)
 
     # ---- Pass 2: parse all files -------------------------------------
-    # 2a. Collect define statements from type/
+    # 2a. Collect define + enum statements from type/
     all_defines: dict[str, tuple[str, str]] = {}
+    all_enums: list[dict] = []
     if type_dir.exists():
         for mtf in sorted(type_dir.glob("*.mt")):
-            parsed = parse_defines(mtf)
-            for name, entry in parsed.items():
+            defines, enums = parse_type_file(mtf)
+            for name, entry in defines.items():
                 all_defines[name] = entry
                 TYPE_MAP[name] = entry  # 同步到全局 TYPE_MAP，供后续字段解析使用
-            print(f"  type/{mtf.name}: {len(parsed)} define(s)")
+            for e in enums:
+                all_enums.append(e)
+                ENUM_TYPES.add(e["name"])
+            print(f"  type/{mtf.name}: {len(defines)} define(s), {len(enums)} enum(s)")
 
     # 2b. Parse message/
     all_messages: list[dict] = []
@@ -863,6 +984,14 @@ def main() -> int:
         gen_root.mkdir(parents=True, exist_ok=True)
         path = gen_root / "Types.hpp"
         path.write_text(generate_types_hpp(all_defines))
+        print(f"  wrote {path}")
+
+    # 3b. Enum headers (from type/ directory)
+    gen_type_dir = gen_root / "type"
+    for enum_def in all_enums:
+        gen_type_dir.mkdir(parents=True, exist_ok=True)
+        path = gen_type_dir / f"{enum_def['name']}.hpp"
+        path.write_text(generate_enum_hpp(enum_def))
         print(f"  wrote {path}")
 
     # 4. Message headers
@@ -903,9 +1032,9 @@ def main() -> int:
         path.write_text(generate_task_pool_types_hpp(context_names))
         print(f"  wrote {path}")
 
-    total = len(all_defines) + len(all_messages) + len(all_contexts)
-    print(f"Done: {len(all_defines)} define(s), {len(all_messages)} message(s), "
-          f"{len(all_contexts)} context(s) generated.")
+    total = len(all_defines) + len(all_enums) + len(all_messages) + len(all_contexts)
+    print(f"Done: {len(all_defines)} define(s), {len(all_enums)} enum(s), "
+          f"{len(all_messages)} message(s), {len(all_contexts)} context(s) generated.")
     return 0
 
 

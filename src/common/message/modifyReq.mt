@@ -1,2 +1,0 @@
-message ModifyReq
-    actor handle

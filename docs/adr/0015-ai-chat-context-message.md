@@ -24,18 +24,16 @@
 
 ### 1. 对话历史存储在 Context
 
-`AiChatContext` 中维护 `messagesBuffer` 字段，存储 `messages` 数组的 JSON 字符串（不含外层 `model` 和 `temperature`）：
+`AiChatContext` 中维护 `messagesBuffer` 字段，存储 `messages` 数组的 JSON 片段（不含外层 `[` `]`）：
 
 ```
 Context 存的内容（示例）：
-[{"role":"system","content":"你是一个助手"},{"role":"user","content":"hi"},{"role":"assistant","content":"hello"}]
+{"role":"system","content":"你是一个助手"},{"role":"user","content":"hi"},{"role":"assistant","content":"hello"}
 ```
 
-### 2. AiChatBus 纯追加操作，不解析
-
-- 新请求时从 Context 取出整段 messages JSON，拼入本轮新 `user` 消息
-- 收到 AI 回复后把 `{"role":"assistant","content":"..."}` 追加到 Context 末尾
-- 不解析、不遍历、不需要单条提取
+- 首轮自动预置 system prompt
+- `buildMessagesJson()` 负责添加 `[` `]` 外壳和新 user 消息
+- `appendAssistantMsg()` 追加 assistant 消息
 
 ### 3. 消息体传递 JSON 字符串
 
@@ -45,16 +43,33 @@ Context 存的内容（示例）：
 
 ```
 AiChatContext（.mt 定义）：
-  uint8[64]   modelName        定长 model 名
-  int32       turnCount        轮次计数
-  double      temperature      温度参数
-  int32       messagesLen      已用字节数
-  uint8[16384] messagesBuffer  16KB JSON 缓冲区
+  uint8[64]    modelName         定长 model 名
+  int32        turnCount         轮次计数
+  double       temperature       温度参数
+  int32        messagesLen       已用字节数
+  uint8[16384] messagesBuffer    16KB JSON 缓冲区（不含 [] 外壳）
+  EoAddress    businessReplyAddr 回复目标地址（从 req.head.sourceAddress 写入，回复后清空）
+  AiChatStage  stage             会话阶段（AwaitingUser / AwaitingServiceResp）
 ```
 
 - 所有字段为定长类型，无 `std::string` / `std::vector`
+- `businessReplyAddr` 在收到请求时写入，发送响应后清空，确保每轮独立
+- `stage` 用于状态机校验，防止错序消息
 - 缓冲区满时通知用户"对话容量已满"
-- 后期预留自动压缩机制（调 AI 压缩历史后覆盖）
+
+### 5. 消息流转与会话状态
+
+```
+                   req.head.sourceAddress ──▶ ctx.businessReplyAddr (回复目标)
+AwaitingUser ──(AiChatBusinessReq)──▶ messagesBuffer 追加 user ──▶ AwaitingServiceResp
+                                                                          │
+                                                                     (AiChatServiceResp)
+                                                                          │
+                                                                          ▼
+AwaitingUser ◀── businessReplyAddr 清空 ◀── messagesBuffer 追加 assistant ◀──┘
+```
+
+AiChatBus 不持有固定的回复地址，回复目标跟随每条请求存入 Context。
 
 ---
 
@@ -80,10 +95,10 @@ AiChatContext（.mt 定义）：
 
 ## 影响
 
-- **AiChatContext**：从实验性结构（含 `std::string`）改为全静态定长字段
-- **AiChatBus**：消息组装逻辑为纯字符串拼接 + memcpy
-- **AiApiAdapter**：HTTP body 组装为字符串拼接，无 JSON 解析（nlohmann/json 只用于构造外层对象）
-- **单 AI Chat 与多 AI 讨论复用**：多 AI 讨论在 Context 中增加 `return1/2/3` 字段，消息链路不变
+- **AiChatContext**：全静态定长字段，新增 `businessReplyAddr`（回复目标地址）和 `stage`（AiChatStage 枚举，状态机校验）
+- **AiChatBus**：消息组装为 `buildMessagesJson()`（纯拼接 + 写回） + `appendAssistantMsg()`（追加 assistant），入口 `handle()` 精简为路由 + 委托
+- **AiApiAdapter**：HTTP body 组装为字符串拼接，无 JSON 解析
+- **会话状态**：`AwaitingUser` ↔ `AwaitingServiceResp` 两阶段状态机，防止消息错序
 
 ---
 
@@ -100,3 +115,4 @@ AiChatContext（.mt 定义）：
 | 日期 | 修订 |
 |------|------|
 | 2026-06-16 | 初稿，采纳 |
+| 2026-06-21 | 新增 businessReplyAddr、AiChatStage 字段；messagesBuffer 改为不含 [] 外壳；拆出 buildMessagesJson/writeMessagesToContext/appendAssistantMsg；增加状态机说明 |

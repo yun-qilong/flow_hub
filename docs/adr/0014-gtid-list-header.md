@@ -158,7 +158,7 @@ AiChatBus ──(head.sourceAddress=Router)──▶ ServiceGateway ──(透�
                                                                 resp ──▶ Router ──▶ AiChatBus
 ```
 
-`AiChatBus` 构造 `AiChatServiceReq` 时填充 `head.sourceAddress = routerAddr_`（Router 地址通过 `ModifyReq` 注入）。
+`AiChatBus` 构造 `AiChatServiceReq` 时填充 `head.sourceAddress = this->senderAddress()`（Router 转发 `AiChatBusinessReq` 给 AiChatBus 时，CAF 自动设置 current_sender 为 Router，handler 内通过 senderAddress() 获取）。
 
 ---
 
@@ -191,7 +191,7 @@ gtidList: StaticVector<uint16_t, 8>  // 或 std::array
 - **Router**：从"提取单个 GTID 路由"改为"遍历 gtidList 逐条路由"。行为更简单。当前阶段仅取 `gtidList[0]`，fan-out 遍历留待后续
 - **Gateway**：fan-out 嵌入从"填 fanOutGtids 字段"改为"往 gtidList 里追加一项"
 - **AiApiAdapter**：回复目标从 `senderAddress()`（原路返回）改为 `req.sourceAddress`（按消息头指定地址），使回复可经 Router 回到 AiChatBus 而非直接回 ServiceGateway
-- **AiChatBus**：发送 `AiChatServiceReq` 时填充 `sourceAddress = routerAddr_`（Router 地址通过 `ModifyReq` 注入），确保 AiApiAdapter 的 `AiChatServiceResp` 回复经 Router 路由。AiChatBus 收到 `AiChatServiceResp` 后转换为 `AiChatBusinessResp` 发给 SessionData
+- **AiChatBus**：发送 `AiChatServiceReq` 时填充 `sourceAddress = this->senderAddress()`（Router 是当前消息的发送者，CAF 自动设置 current_sender），确保 AiApiAdapter 的 `AiChatServiceResp` 回复经 Router 路由。AiChatBus 收到 `AiChatServiceResp` 后转换为 `AiChatBusinessResp`，通过 Context 中存储的 `businessReplyAddr` 回复给请求发起方
 - **Adapter**：透传 gtidList，无需关心长度
 - **SessionData**：包装消息时填 `gtidList: [gtid]`（单元素列表）
 - **gen_code.py**：新增 `vector` 类型、`Type<Args>` 模板语法、`include` 字段注入机制
@@ -214,3 +214,4 @@ gtidList: StaticVector<uint16_t, 8>  // 或 std::array
 |------|------|
 | 2026-06-16 | 初稿，采纳 |
 | 2026-06-20 | 实现：MsgHead struct + 显式 `MsgHead head` 成员（非字段注入）；gen_code.py 扩展（vector/Type\<Args\>）；6 个消息迁移；AiApiAdapter 回复路径修正为 req.head.sourceAddress |
+| 2026-06-21 | 移除 ModifyReq；AiChatBus 回复地址从固定成员改为 Context 字段 businessReplyAddr；Router 地址通过 senderAddress() 获取 |

@@ -4,3 +4,5 @@ context AiChatContext
     double temperature
     int32 messagesLen
     uint8[16384] messagesBuffer
+    EoAddress businessReplyAddr
+    AiChatStage stage

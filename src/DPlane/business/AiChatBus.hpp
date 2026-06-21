@@ -1,0 +1,69 @@
+// src/DPlane/business/AiChatBus.hpp
+// Data-plane business layer — AI Chat Scheduling EO
+//
+// 按 ADR-0010 规则：Business 层需要读写 Context 的 EO 通过 TaskType 模板参数
+// 绑定业务类型。ContextType 由 ContextTypeOf<T> 编译期推导。
+//
+// 职责：
+//   1. 收到 AiChatBusinessReq → 追加 user 消息到 Context → 转发 AiChatServiceReq 给 Adapter
+//   2. 收到 AiChatServiceResp → 追加 assistant 消息到 Context → 回复 AiChatBusinessResp 给
+//   SessionData
+
+#pragma once
+
+#include "fw/EoBase.hpp"
+#include "generated/TaskType.hpp"
+#include "generated/TaskTypeTraits.hpp"
+
+namespace common
+{
+class TaskPool;
+}
+
+namespace common::message
+{
+struct AiChatServiceReq;
+}
+
+namespace DPlane::business
+{
+
+template <common::TaskType T>
+class AiChatBus : public fw::EoBase<AiChatBus<T>>
+{
+  public:
+    // 编译期推导 Context 类型（零开销）
+    using ContextType = common::ContextTypeOf<T>;
+
+    // pool: TaskPool 引用（Context 读写）
+    // gatewayAddr: ServiceGateway actor（发送 AiChatServiceReq 的目标）
+    explicit AiChatBus(fw::EoConfig &cfg, common::TaskPool &pool, fw::EoAddress gatewayAddr,
+                       std::string defaultModelName = "default");
+
+    void handle(const common::message::AiChatBusinessReq &req);
+    void handle(const common::message::AiChatServiceResp &resp);
+
+  protected:
+    void init() override
+    {
+        this->template onMsg<common::message::AiChatBusinessReq>();
+        this->template onMsg<common::message::AiChatServiceResp>();
+    }
+
+  private:
+    void processServiceRequest(ContextType &ctx, const common::message::AiChatBusinessReq &req,
+                               uint16_t gtid);
+    void processBusinessResp(ContextType &ctx, const common::message::AiChatServiceResp &resp,
+                             uint16_t gtid);
+    std::string buildMessagesJson(const ContextType &ctx, const std::string &content) const;
+    void writeMessagesToContext(ContextType &ctx, const std::string &body);
+    common::message::AiChatServiceReq buildAiChatServiceReq(uint16_t gtid, std::string messagesJson,
+                                                            const ContextType &ctx);
+    void appendAssistantMsg(ContextType &ctx, const std::string &content);
+
+    common::TaskPool &pool_;
+    fw::EoAddress gatewayAddr_;
+    std::string defaultModelName_;
+};
+
+} // namespace DPlane::business
