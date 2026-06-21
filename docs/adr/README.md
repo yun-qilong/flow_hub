@@ -14,8 +14,13 @@
 | [0009](./0009-gtid-context-rules.md) | GTID Context 访问规则、物理存储与映射表同步协议 | 已采纳 |
 | [0010](./0010-eo-context-type.md) | EO 强制声明 ContextType 模板参数 | 已采纳 |
 | [0011](./0011-gtid-routing-key.md) | GTID 替代虚拟 ID 作为路由键，Router 定位为层内设施 | 已采纳 |
+| [0012](./0012-remove-protocol-gateway.md) | 取消 ProtocolGateway，统一为 ServiceGateway | 已采纳 |
+| [0013](./0013-fan-out-gateway-embed.md) | fan-out 实现机制——Gateway 出向预埋 GTID 列表 | 已采纳 |
+| [0014](./0014-gtid-list-header.md) | 消息头统一为 gtidList | 已采纳 |
+| [0015](./0015-ai-chat-context-message.md) | AI Chat Context 消息格式 | 已采纳 |
 | [0016](./0016-eo-env-wrapper.md) | 引入 EoEnv 包装层，彻底隐藏 CAF | 已采纳 |
 | [0017](./0017-mayblock-compile-time-tag.md) | 编译期标签 `kMayBlock` 自动选择 Actor 线程模式 | 已采纳 |
+| [0018](./0018-eo-zero-copy-delegate.md) | EoBase 消息转发零拷贝优化（onMsg move-aware + delegateTo const 拦截） | 已采纳 |
 
 ## 模板
 

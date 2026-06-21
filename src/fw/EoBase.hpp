@@ -15,6 +15,7 @@
 #include "utils/CrtpBase.hpp"
 
 #include <iostream>
+#include <type_traits>
 #include <utility>
 
 // ===== Actor base class (hides caf::event_based_actor) =====
@@ -36,14 +37,13 @@ class EoBase : public caf::event_based_actor, public utils::CrtpBase<Derived>
     // ----- message handler registration -------------------------------
     // Call in init() for each message type this actor handles.
     //
-    //   on<MyMsg>([this](const MyMsg& msg) {
-    //       send(dest, msg);
+    //   on<MyMsg>([this](MyMsg& msg) {
+    //       delegateTo(dest, std::move(msg));
     //   });
     template <typename Msg, typename F>
     void on(F &&handler)
     {
-        auto mh =
-            caf::message_handler{[this, h = std::forward<F>(handler)](const Msg &m) { h(m); }};
+        auto mh = caf::message_handler{[this, h = std::forward<F>(handler)](Msg &m) { h(m); }};
         if (mh_)
         {
             mh_ = mh_.or_else(std::move(mh));
@@ -65,6 +65,7 @@ class EoBase : public caf::event_based_actor, public utils::CrtpBase<Derived>
 
     // ----- shorthand registration ------------------------------------
     // Registers this->handle(msg) as the handler for Msg.
+    // handle() may take Msg by value or const Msg&.
     //
     //   init() {
     //       onMsg<MyMsg>();
@@ -73,7 +74,7 @@ class EoBase : public caf::event_based_actor, public utils::CrtpBase<Derived>
     template <typename Msg>
     void onMsg()
     {
-        on<Msg>([this](const Msg &msg) { this->getImplementation().handle(msg); });
+        on<Msg>([this](Msg &msg) { this->getImplementation().handle(std::move(msg)); });
     }
 
     // ----- message sending ------------------------------------------
@@ -86,7 +87,10 @@ class EoBase : public caf::event_based_actor, public utils::CrtpBase<Derived>
     template <typename Msg>
     void delegateTo(EoAddress target, Msg &&msg)
     {
-        this->mail(std::forward<Msg>(msg)).delegate(target);
+        static_assert(not std::is_const_v<std::remove_reference_t<Msg>>,
+                      "delegateTo requires non-const message; use value-passing handle(Msg) "
+                      "instead of handle(const Msg&)");
+        auto _ = this->mail(std::forward<Msg>(msg)).delegate(target);
     }
 
     template <typename Duration, typename Msg>
