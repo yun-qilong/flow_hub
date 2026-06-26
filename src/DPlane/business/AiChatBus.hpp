@@ -57,8 +57,11 @@ class AiChatBus : public fw::EoBase<AiChatBus<T>>
                              uint16_t gtid);
     std::string buildMessagesJson(const ContextType &ctx, const std::string &content) const;
     void writeMessagesToContext(ContextType &ctx, const std::string &body);
+    uint16_t allocateAndRecordSeq(ContextType &ctx);
+    void sendAck(const ContextType &ctx, uint16_t gtid, uint16_t seq, const std::string &content);
     common::message::AiChatServiceReq buildAiChatServiceReq(uint16_t gtid, std::string messagesJson,
-                                                            const ContextType &ctx);
+                                                            const ContextType &ctx,
+                                                            uint16_t reqSeq);
     void appendAssistantMsg(ContextType &ctx, const std::string &content);
 
     common::TaskPool &pool_;

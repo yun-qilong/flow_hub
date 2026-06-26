@@ -1,7 +1,6 @@
 include message/UserHead.mt
 
-message AiChatServiceResp
+message AiChatMsgAck
     UserHead head
-    bool success
+    uint16 seq
     string content
-    uint16 reqSeq

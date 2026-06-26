@@ -130,9 +130,9 @@ graph TB
     subgraph Service["Service Layer 服务层"]
         SVM["C-Plane ServiceMgr"]
         SG["D-Plane ServiceGateway"]
-        MqttAd["MqttAdapter 非 EO"]
-        ApiAd["AiApiAdapter 非 EO"]
-        CanAd["CanAdapter 非 EO"]
+        MqttAd["MqttAdapter (EO)"]
+        ApiAd["AiApiAdapter (EO)"]
+        CanAd["CanAdapter (EO)"]
     end
 
     AG --> SM
@@ -197,16 +197,18 @@ Business Layer（业务层）
 Service Layer（服务层）
 ├── C-Plane: ServiceMgr      设备发现、连接管理、维护设备注册表、配置 Adapter 注册表与 fan-out 配置
 └── D-Plane: ServiceGateway   统一外部服务入口——维护 Adapter 注册表（出向：按消息类型/targetAi 找 Adapter）和 fan-out 配置（出向时预判入向 fan-out 需求，将额外 GTID 嵌入请求）
-             MqttAdapter      纯协议翻译：内部消息 <-> MQTT（非 EO）
-             AiApiAdapter     纯协议翻译：内部消息 <-> HTTP（非 EO）
-             CanAdapter       CAN Bus 协议适配（预留，非 EO）
-             ModbusAdapter    Modbus RTU/TCP（预留，非 EO）
-             NPUAdapter       NPU 推理结果接入（预留，非 EO）
+             MqttAdapter      纯协议翻译：内部消息 <-> MQTT（EO, kMayBlock）
+             AiApiAdapter     纯协议翻译：内部消息 <-> HTTP（EO, kMayBlock）
+             CanAdapter       CAN Bus 协议适配（预留，EO, kMayBlock）
+             ModbusAdapter    Modbus RTU/TCP（预留，EO, kMayBlock）
+             NPUAdapter       NPU 推理结果接入（预留，EO, kMayBlock）
 ```
 
 ### Service Layer D 面
 
 所有外部设备通过 Adapter 翻译为内部消息后，经由 ServiceGateway 进入系统。Adapter 地位平等，协议差异完全封装在 Adapter 内部。
+
+**Service 层 Adapter 是 EO**：驱动源头为内部消息（收到内部 EO 消息后，主动向外部发起 HTTP/MQTT/CAN 等请求，原地阻塞等待回复）。`kMayBlock=true` 编译期标签使 CAF 以独立线程（detached）创建，阻塞不影响共享调度池。这与 Access 层 Adapter 不同——Access Adapter 的驱动源头是外部事件（stdin、WebSocket 帧），无法要求外部世界按 CAF 消息协议发送，因此 Access Adapter **不是 EO**，运行在独立线程/事件循环中，通过 `anonSendTo` 注入 actor 系统。
 
 **Gateway 与 Router 的分发依据不同**：Gateway 按消息类型或消息内字段（如 `targetAi`）做映射——出向找 Adapter，fan-out 决定额外 GTID。Router 仅按 GTID 位运算做路由——不读消息内容，不改消息体。
 

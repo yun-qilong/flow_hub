@@ -1,8 +1,9 @@
 context AiChatContext
     uint8[64] modelName
-    int32 turnCount
     double temperature
     int32 messagesLen
     uint8[16384] messagesBuffer
     EoAddress businessReplyAddr
-    AiChatStage stage
+    uint16[256] messageOffsets
+    uint8 messageCount
+    uint16 pendingReqSeq

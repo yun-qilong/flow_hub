@@ -13,6 +13,10 @@ namespace DPlane::business
 using namespace common;
 using namespace common::message;
 
+// 首轮自动预置的 system prompt（含尾部逗号分隔符）
+static constexpr std::string_view SYSTEM_PROMPT =
+    R"({"role":"system","content":"你是一个有帮助的AI助手。"},)";
+
 template <common::TaskType T>
 AiChatBus<T>::AiChatBus(fw::EoConfig &cfg, TaskPool &pool, fw::EoAddress gatewayAddr,
                         std::string defaultModelName)
@@ -21,7 +25,6 @@ AiChatBus<T>::AiChatBus(fw::EoConfig &cfg, TaskPool &pool, fw::EoAddress gateway
 {
 }
 
-// ===== handle(AiChatBusinessReq) =====
 template <common::TaskType T>
 void AiChatBus<T>::handle(const AiChatBusinessReq &req)
 {
@@ -38,7 +41,6 @@ void AiChatBus<T>::handle(const AiChatBusinessReq &req)
         });
 }
 
-// ===== handle(AiChatServiceResp) =====
 template <common::TaskType T>
 void AiChatBus<T>::handle(const AiChatServiceResp &resp)
 {
@@ -55,21 +57,21 @@ void AiChatBus<T>::handle(const AiChatServiceResp &resp)
         });
 }
 
-// ===== processServiceRequest =====
 template <common::TaskType T>
 void AiChatBus<T>::processServiceRequest(ContextType &ctx, const AiChatBusinessReq &req, GTID gtid)
 {
-    if (ctx.stage != common::AiChatStage::AwaitingUser)
-    {
-        std::cerr << "[AiChatBus] ERROR: stage=" << to_string(ctx.stage)
-                  << " expected AwaitingUser, dropping AiChatBusinessReq\n";
-        return;
-    }
-
     ctx.businessReplyAddr = req.head.sourceAddress;
 
+    uint16_t seq = allocateAndRecordSeq(ctx);
     std::string body = buildMessagesJson(ctx, req.content);
     writeMessagesToContext(ctx, body);
+
+    sendAck(ctx, gtid, seq, req.content);
+
+    std::cout << "[AiChatBus] msg committed: seq=" << seq << " content=" << req.content
+              << (ctx.pendingReqSeq != 0 ? " (preempting)" : "") << "\n";
+
+    ctx.pendingReqSeq = seq;
 
     if (not gatewayAddr_)
     {
@@ -77,29 +79,31 @@ void AiChatBus<T>::processServiceRequest(ContextType &ctx, const AiChatBusinessR
         return;
     }
 
-    auto serviceReq = buildAiChatServiceReq(gtid, "[" + std::move(body) + "]", ctx);
-
-    ctx.stage = common::AiChatStage::AwaitingServiceResp;
-
-    std::cout << "[AiChatBus] sending AiChatServiceReq to gateway\n";
+    auto serviceReq = buildAiChatServiceReq(gtid, "[" + std::move(body) + "]", ctx, seq);
+    std::cout << "[AiChatBus] sending AiChatServiceReq (reqSeq=" << seq << ") to gateway\n";
     this->sendTo(gatewayAddr_, std::move(serviceReq));
 }
 
-// ===== processBusinessResp =====
 template <common::TaskType T>
 void AiChatBus<T>::processBusinessResp(ContextType &ctx, const AiChatServiceResp &resp, GTID gtid)
 {
-    if (ctx.stage != common::AiChatStage::AwaitingServiceResp)
+    if (ctx.pendingReqSeq == 0)
     {
-        std::cerr << "[AiChatBus] ERROR: stage=" << to_string(ctx.stage)
-                  << " expected AwaitingServiceResp, dropping AiChatServiceResp\n";
+        std::cerr << "[AiChatBus] ERROR: no pending request, dropping AiChatServiceResp\n";
+        return;
+    }
+
+    if (resp.reqSeq != ctx.pendingReqSeq)
+    {
+        std::cout << "[AiChatBus] stale response discarded (resp.reqSeq=" << resp.reqSeq
+                  << " != pendingReqSeq=" << ctx.pendingReqSeq << ")\n";
         return;
     }
 
     if (resp.success)
     {
+        allocateAndRecordSeq(ctx);
         appendAssistantMsg(ctx, resp.content);
-        ctx.turnCount++;
     }
 
     if (not ctx.businessReplyAddr)
@@ -108,7 +112,7 @@ void AiChatBus<T>::processBusinessResp(ContextType &ctx, const AiChatServiceResp
         return;
     }
 
-    ctx.stage = common::AiChatStage::AwaitingUser;
+    ctx.pendingReqSeq = 0;
 
     auto target = ctx.businessReplyAddr;
     ctx.businessReplyAddr = {};
@@ -116,7 +120,36 @@ void AiChatBus<T>::processBusinessResp(ContextType &ctx, const AiChatServiceResp
     this->sendTo(target, AiChatBusinessResp{resp.head, resp.success, resp.content});
 }
 
-// ===== buildMessagesJson (pure) =====
+template <common::TaskType T>
+uint16_t AiChatBus<T>::allocateAndRecordSeq(ContextType &ctx)
+{
+    int oldLen = ctx.messagesLen;
+    uint16_t seq = ctx.messageCount;
+    ctx.messageCount++;
+
+    if (seq == 0)
+    {
+        ctx.messageOffsets.at(seq) = static_cast<uint16_t>(SYSTEM_PROMPT.size());
+    }
+    else
+    {
+        ctx.messageOffsets.at(seq) = static_cast<uint16_t>(oldLen + 1);
+    }
+
+    return seq;
+}
+
+template <common::TaskType T>
+void AiChatBus<T>::sendAck(const ContextType &ctx, uint16_t gtid, uint16_t seq,
+                           const std::string &content)
+{
+    AiChatMsgAck ack;
+    ack.head.gtidList = {gtid};
+    ack.seq = seq;
+    ack.content = content;
+    this->sendTo(ctx.businessReplyAddr, std::move(ack));
+}
+
 template <common::TaskType T>
 std::string AiChatBus<T>::buildMessagesJson(const ContextType &ctx,
                                             const std::string &content) const
@@ -132,7 +165,6 @@ std::string AiChatBus<T>::buildMessagesJson(const ContextType &ctx,
     return std::string(buf, ctx.messagesLen) + "," + userMsg;
 }
 
-// ===== writeMessagesToContext =====
 template <common::TaskType T>
 void AiChatBus<T>::writeMessagesToContext(ContextType &ctx, const std::string &body)
 {
@@ -145,10 +177,9 @@ void AiChatBus<T>::writeMessagesToContext(ContextType &ctx, const std::string &b
     }
 }
 
-// ===== buildAiChatServiceReq =====
 template <common::TaskType T>
 AiChatServiceReq AiChatBus<T>::buildAiChatServiceReq(uint16_t gtid, std::string messagesJson,
-                                                     const ContextType &ctx)
+                                                     const ContextType &ctx, uint16_t reqSeq)
 {
     std::string modelName(
         reinterpret_cast<const char *>(ctx.modelName.data()),
@@ -160,10 +191,10 @@ AiChatServiceReq AiChatBus<T>::buildAiChatServiceReq(uint16_t gtid, std::string 
     req.messagesJson = std::move(messagesJson);
     req.modelName = modelName.empty() ? defaultModelName_ : modelName;
     req.temperature = ctx.temperature > 0.0 ? ctx.temperature : 0.7;
+    req.reqSeq = reqSeq;
     return req;
 }
 
-// ===== appendAssistantMsg =====
 template <common::TaskType T>
 void AiChatBus<T>::appendAssistantMsg(ContextType &ctx, const std::string &content)
 {

@@ -1,5 +1,5 @@
-include message/MsgHead.mt
+include message/UserHead.mt
 
 message AiChatBusinessReq
-    MsgHead head
+    UserHead head
     string content

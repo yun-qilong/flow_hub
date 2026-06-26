@@ -44,32 +44,44 @@ Context 存的内容（示例）：
 ```
 AiChatContext（.mt 定义）：
   uint8[64]    modelName         定长 model 名
-  int32        turnCount         轮次计数
   double       temperature       温度参数
   int32        messagesLen       已用字节数
   uint8[16384] messagesBuffer    16KB JSON 缓冲区（不含 [] 外壳）
   EoAddress    businessReplyAddr 回复目标地址（从 req.head.sourceAddress 写入，回复后清空）
-  AiChatStage  stage             会话阶段（AwaitingUser / AwaitingServiceResp）
+  uint16[256]  messageOffsets    每条消息在 buffer 中的起始字节偏移（seq→offset）
+  uint8        messageCount      当前消息总数（= 下一条消息的 seq）
+  uint16       pendingReqSeq     当前等待回复的请求版本号，0 = 无等待
 ```
 
-- 所有字段为定长类型，无 `std::string` / `std::vector`
-- `businessReplyAddr` 在收到请求时写入，发送响应后清空，确保每轮独立
-- `stage` 用于状态机校验，防止错序消息
-- 缓冲区满时通知用户"对话容量已满"
+- `messageOffsets[seq]` 记录 seq 对应的消息在 `messagesBuffer` 中的起始字节偏移
+  - seq=0（首条用户消息）：偏移 = system prompt 长度（~65 字节）
+  - seq≥1：偏移 = 写入前 `messagesLen + 1`（逗号分隔符之后）
+- `messageCount` 为 0-based，每次写入消息时 `allocateAndRecordSeq()` 先取值再自增
+- `pendingReqSeq` 替代了原 `AiChatStage` 枚举：`== 0` 表示空闲，`!= 0` 表示等待回复
+- 已废弃字段：`turnCount`（由 messageCount 取代）、`stage`（由 pendingReqSeq 取代）
 
-### 5. 消息流转与会话状态
+### 5. 消息流转与 seq 版本控制
 
 ```
-                   req.head.sourceAddress ──▶ ctx.businessReplyAddr (回复目标)
-AwaitingUser ──(AiChatBusinessReq)──▶ messagesBuffer 追加 user ──▶ AwaitingServiceResp
-                                                                          │
-                                                                     (AiChatServiceResp)
-                                                                          │
-                                                                          ▼
-AwaitingUser ◀── businessReplyAddr 清空 ◀── messagesBuffer 追加 assistant ◀──┘
+AiChatBusinessReq 到达:
+  ① allocateAndRecordSeq(ctx)         → 分配 seq，记录 messageOffsets
+  ② buildMessagesJson + writeToContext → 写 buffer
+  ③ sendAck(ctx, gtid, seq, content)   → AiChatMsgAck 确认送达
+  ④ pendingReqSeq = seq               → 更新版本号
+  ⑤ buildAiChatServiceReq(reqSeq=seq)  → 发 API 请求
+
+AiChatServiceResp 到达:
+  ① resp.reqSeq == pendingReqSeq? → 匹配: 正常处理
+  ② resp.reqSeq != pendingReqSeq? → 过时: 丢弃（新请求已由后续用户消息触发）
+
+正常处理:
+  ③ allocateAndRecordSeq(ctx)         → assistant 消息也分配 seq
+  ④ appendAssistantMsg                → 追加 assistant
+  ⑤ pendingReqSeq = 0                 → 清除等待标记
+  ⑥ send AiChatBusinessResp           → 回复 SessionData
 ```
 
-AiChatBus 不持有固定的回复地址，回复目标跟随每条请求存入 Context。
+**抢占机制**：在 `pendingReqSeq != 0`（等待回复）期间收到新用户消息时，立即写入 context、发送 Ack、发起**新的** API 请求（携带更新的 reqSeq）。旧 API 回复到达时因 reqSeq 不匹配被丢弃。不主动取消旧请求（HTTP 无法可靠中断）。
 
 ---
 
@@ -95,10 +107,10 @@ AiChatBus 不持有固定的回复地址，回复目标跟随每条请求存入 
 
 ## 影响
 
-- **AiChatContext**：全静态定长字段，新增 `businessReplyAddr`（回复目标地址）和 `stage`（AiChatStage 枚举，状态机校验）
-- **AiChatBus**：消息组装为 `buildMessagesJson()`（纯拼接 + 写回） + `appendAssistantMsg()`（追加 assistant），入口 `handle()` 精简为路由 + 委托
+- **AiChatContext**：全静态定长字段。新增 `messageOffsets`（seq→buffer 偏移）、`messageCount`（消息计数）、`pendingReqSeq`（请求版本号）。废弃 `turnCount`、`stage`（AiChatStage 枚举已移除）
+- **AiChatBus**：新增 `allocateAndRecordSeq()`（seq 分配 + 偏移记录）、`sendAck()`（AiChatMsgAck 确认）。状态管理从 stage 枚举迁移到 `pendingReqSeq` 版本检测
 - **AiApiAdapter**：HTTP body 组装为字符串拼接，无 JSON 解析
-- **会话状态**：`AwaitingUser` ↔ `AwaitingServiceResp` 两阶段状态机，防止消息错序
+- **会话状态**：由 `pendingReqSeq` 隐式表达——`== 0` 空闲，`!= 0` 等待回复。支持抢占：等待期间新消息立即发起新请求，旧响应按版本丢弃
 
 ---
 
@@ -116,3 +128,4 @@ AiChatBus 不持有固定的回复地址，回复目标跟随每条请求存入 
 |------|------|
 | 2026-06-16 | 初稿，采纳 |
 | 2026-06-21 | 新增 businessReplyAddr、AiChatStage 字段；messagesBuffer 改为不含 [] 外壳；拆出 buildMessagesJson/writeMessagesToContext/appendAssistantMsg；增加状态机说明 |
+| 2026-06-26 | 引入 seq 版本控制机制：新增 messageOffsets/messageCount/pendingReqSeq，废弃 stage/turnCount；新增 allocateAndRecordSeq/sendAck；支持抢占式请求（等待期间新消息立即发新 API 请求，旧响应按版本丢弃）；消息头 MsgHead→UserHead 更名，嵌入 UserInfo；新增 AiChatMsgAck 确认消息 |

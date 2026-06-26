@@ -1,7 +1,8 @@
-include message/MsgHead.mt
+include message/UserHead.mt
 
 message AiChatServiceReq
-    MsgHead head
+    UserHead head
     string messagesJson
     string modelName
     double temperature
+    uint16 reqSeq

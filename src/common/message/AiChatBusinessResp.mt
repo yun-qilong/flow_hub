@@ -1,6 +1,6 @@
-include message/MsgHead.mt
+include message/UserHead.mt
 
 message AiChatBusinessResp
-    MsgHead head
+    UserHead head
     bool success
     string content
