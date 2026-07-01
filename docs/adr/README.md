@@ -22,6 +22,11 @@
 | [0017](./0017-mayblock-compile-time-tag.md) | 编译期标签 `kMayBlock` 自动选择 Actor 线程模式 | 已采纳 |
 | [0018](./0018-eo-zero-copy-delegate.md) | EoBase 消息转发零拷贝优化（onMsg move-aware + delegateTo const 拦截） | 已采纳 |
 | [0019](./0019-router-route-table.md) | Router 路由表实现——定长数组 + Config/Reconfig 协议 + 混合转发策略 | 已采纳 |
+| [0020](./0020-seq-version-control.md) | AiChatBus 序列号版本控制（抢占式请求） | 已采纳 |
+| [0021](./0021-session-flags-compile-time.md) | SessionFlags 编译期 flag 映射模式 | 已采纳 |
+| [0022](./0022-batch-fanout-two-level.md) | BatchFanOut/FanOutMsg 两级上行广播机制 | 已采纳 |
+| [0023](./0023-bundled-request-gtid-sentinel.md) | 捆绑请求 + GTID 哨兵值新建 Task 协议 | 已采纳 |
+| [0024](./0024-head-accesstype-reuse.md) | head.accessType 复用替代 sourceAddress 字段 | 已采纳 |
 
 ## 模板
 

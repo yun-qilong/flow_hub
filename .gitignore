@@ -31,3 +31,6 @@ __pycache__/
 # Plugin
 .continue/
 .github/
+
+# Prompts
+.prompts/

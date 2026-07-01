@@ -4,6 +4,8 @@
 |------|------|--------|
 | 已采纳 | 2026-06-15 | 韵启龙 |
 
+> **修订（2026-07-01）**：§3 中 `sourceAddress` 字段已被 [ADR-0024](../adr/0024-head-accesstype-reuse.md) 移除。`accessType` 承担回程路由、fan-out 位图索引、源 Adapter 排除三重职责。其余内容（GTID 作为路由键、Router 定位为 Business Layer 内部设施、入向经 Router 出向直连）保持不变。
+
 ---
 
 ## 背景
@@ -54,16 +56,19 @@ Router 是 Business Layer D 面的一个 EO。它只负责本层 EO 的地址映
 
 **若其他层将来引入热备**，应在各自层内增设自己的 Router，而非扩展当前 Router 的职责。
 
-### 3. 统一消息头：GTID + sourceAddress
+### 3. 统一消息头（⚠️ 修订：`sourceAddress` 已由 ADR-0024 移除，`accessType` 承担回程路由职责）
+
+> **以下为原始决策内容。其中 `sourceAddress` 字段已被 [ADR-0024](../adr/0024-head-accesstype-reuse.md) 移除。当前消息头字段见 README §3.3（uid + gtidList + accessType + appType + sessionFlags）。**
+> **本节中关于 GTID 作为路由键、Router 提取 TaskType 位查表的核心逻辑仍然有效。**
 
 所有消息统一携带两个头部字段：
 
 | 字段 | 类型 | 含义 |
 |------|------|------|
 | **GTID** | `uint16_t` | 统一任务标识，Router 提取 TaskType 位路由 |
-| **sourceAddress** | `EoAddress` | 回复地址，接收方 `sendTo(msg.sourceAddress, resp)` 即可 |
+| **sourceAddress** | `EoAddress` | ~~回复地址，接收方 `sendTo(msg.sourceAddress, resp)` 即可~~（⚠️ 已于 2026-07 由 ADR-0024 移除） |
 
-**`sourceAddress` 填入规则**：
+**`sourceAddress` 填入规则**（⚠️ 已随 sourceAddress 移除而废弃，仅供参考）：
 
 | 发送方 | 消息方向 | sourceAddress 填什么 |
 |--------|---------|---------------------|
@@ -82,7 +87,7 @@ CAF 的 `request().then()` 机制（封装为 `EoBase::requestThen`）的 reply 
 |------|:---:|
 | C 面直连（如 SessionMgr → BusinessMgr） | ✅ 推荐 |
 | D 面同层/邻层直连（如 Adapter → ServiceGateway） | ✅ 可用 |
-| 经 Router 的 D 面流转 | ❌ 用 Fire-and-Forget + `sourceAddress` |
+| 经 Router 的 D 面流转 | ❌ 用 Fire-and-Forget + `sourceAddress`（⚠️ sourceAddress 已移除，现用 accessType + Gateway adapterTable_ 回程） |
 
 ### 5. Router 使用 `delegate()` 零拷贝转发
 
@@ -103,8 +108,8 @@ Router 只读 GTID 提取 TaskType 查表，不修改消息体。使用 CAF 的 
 
 ## 影响
 
-- 消息体不再有 `SchedulerAddress` / `RoutineAddress` 双地址，改为 `GTID` + `sourceAddress`
+- 消息体不再有 `SchedulerAddress` / `RoutineAddress` 双地址，改为 `GTID` + `sourceAddress`（⚠️ sourceAddress 后续由 ADR-0024 移除）
 - ADR-0009 §4（映射表）、§5（虚拟 ID 分配）需相应修订
-- README §3.3（消息）、§6.1（路由规则）、§6.2（Router 与双地址）已更新
+- README §3.3（消息）、§6.1（路由规则）、§6.2（Router 与双地址）已更新（⚠️ README 后续又经 checklist 和 ADR-0024 进一步更新）
 - Router 实现简化：查表键从虚拟 ID 改为 `GTID >> 6`
 - Business Layer 内非 Router EO 的 `myVirtualId` 成员不再需要

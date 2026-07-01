@@ -4,7 +4,11 @@
 |------|------|--------|
 | 已采纳 | 2026-06-01 | 韵启龙 |
 
-> **修订（2026-06-15）**：§4（映射表）和 §5（虚拟 ID 分配）被 [ADR-0011](../adr/0011-gtid-routing-key.md) 取代。GTID 中的 TaskType 位替代虚拟 ID 作为路由键，Router 定位为 Business Layer 内部设施。其余部分（Context 物理存储、读写权限、并发控制、Adapter 地址下发）保持不变。
+> **修订（2026-06-15，更新于 2026-07-01）**：
+> - §5（虚拟 ID 分配）被 [ADR-0011](../adr/0011-gtid-routing-key.md) 废弃——GTID 的 TaskType 位直接作为 Router 路由键，不再需要 SessionMgr 向 BusinessMgr 单独申请虚拟 ID。
+> - §4 的映射表概念由 [ADR-0019](../adr/0019-router-route-table.md) 细化为定长数组 `routeTable_[TaskType] = EoAddress` 的实现，路由表条目值可动态更改以支持未来负载均衡和热备切换。
+> - §6（Adapter 地址下发）的具体链路由后续 ADR 覆盖。
+> - 其余部分（Context 物理存储、读写权限、并发控制）保持不变。
 
 ---
 
@@ -50,35 +54,37 @@ main()
 - **即便多 EO 同时访问不同 GTID**：`TaskPool` 按 GTID 定位独立 slot，不同 slot 之间无共享数据。
 - **Cache Line 隔离**：可能被同时访问的不同 Context slot 强制分配在不同 cache line 上，避免伪共享（false sharing）导致的 cache 弹跳。
 
-### 4. 映射表双持 + Reconfig 同步协议
+### 4. 路由表：TaskType → EO 地址
 
-BusinessMgr 和 Router **各自持有**一份虚拟 ID → 物理 EO 地址映射表：
+> **修订（2026-07-01）**：本节内容已根据 ADR-0019 和当前 Router 实现更新。核心变化——不再使用独立的"虚拟 ID"作为中间层，TaskType 直接作为路由表下标。
 
-| 持有者 | 用途 | 角色 |
-|--------|------|------|
-| BusinessMgr | 负载检测、负载均衡决策、新 task 分配虚拟 ID | Source of Truth |
-| Router | 消息转发时查表 | 同步副本 |
+Router 持有一张定长路由表（ADR-0019），将 TaskType 映射到处理该类型任务的 EO 地址：
 
-**初始一致性**：系统 setup 阶段，两份映射表从同一初始配置构建，完全一致。
+```cpp
+static constexpr uint16_t kRouteTableSize = 1024;
+std::array<fw::EoAddress, kRouteTableSize> routeTable_{};
 
-**同步协议**（仅在负载均衡/热备切换时触发）：
-
-```
-BusinessMgr                        Router
-    │                                 │
-    │  ──── Reconfig(新映射) ────▶    │
-    │                                 │  更新映射表
-    │  ◀──── ACK ────────────────     │
-    │                                 │
-    │  收到 ACK 后更新自己的映射表      │
+fw::EoAddress getTargetEoAddress(uint16_t gtid) const {
+    return routeTable_[gtid >> 6];  // TaskType = GTID 高 10 位
+}
 ```
 
-- **Router 先更新，BM 后更新**：Router 是映射表的实际消费者，必须先切到正确地址。
-- **BM 发出 Reconfig 后、收到 ACK 前**：BM 的映射表仍是旧值。此时若有新 task 请求虚拟 ID，BM 基于旧负载数据决策——负载数据本身有采样滞后性，该窗口可接受。
-- **Reconfig 消息设计为幂等**：Router 收到重复的 Reconfig（因超时重发）不会产生副作用。
-- **崩溃策略**：Router 和 C 面 EO（含 BusinessMgr）崩溃视为致命错误，系统直接崩溃重启。不设计热恢复路径。
+| 维度 | 说明 |
+|------|------|
+| 索引 | `GTID >> 6`，即 TaskType（10 bits，最多 1024 种） |
+| 查表 | 单次数组下标，O(1)，零哈希开销 |
+| 值 | `EoAddress`——处理该 TaskType 的 EO 的物理地址 |
+| 虚拟性 | `routeTable_[taskType]` 的值可动态更改，指向不同 EO 实例。这是负载均衡和热备切换的机制基础——只需更新路由表条目，GTID 和 TaskType 不变，上游完全无感 |
 
-### 5. 新 Task 建立时的虚拟 ID 分配
+路由表通过 Config/Reconfig 协议管理（详见 ADR-0019）：
+- **RouterConfigReq**：setup 阶段全量下发路由表
+- **RouterReconfigReq**：运行时增量更新单个 `TaskType → EoAddress` 映射
+
+BusinessMgr 可在未来根据负载或 EO 健康状态，通过 Reconfig 调整路由表条目，实现同类型 EO 间的动态调度。
+
+### 5. 新 Task 建立（⚠️ 已废弃，保留供参考）
+
+> **修订（2026-07-01）**：本节描述的独立"虚拟 ID 分配"流程已被废弃。当前设计中 GTID 的 TaskType 位直接作为 Router 路由表下标（`routeTable_[GTID >> 6]`），不再需要 SessionMgr 向 BusinessMgr 请求分配独立的虚拟 ID。SessionMgr 分配 GTID 时编码 TaskType，Router 直接查表找到目标 EO。
 
 SessionMgr 创建 task 时，向 BusinessMgr 请求虚拟 ID：
 

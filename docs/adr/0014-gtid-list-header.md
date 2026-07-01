@@ -4,6 +4,16 @@
 |------|------|--------|
 | 已采纳 | 2026-06-16 | 韵启龙 |
 
+> **修订（2026-07-01）**：本 ADR 的原始决策中，以下内容已被后续 ADR 修改或移除：
+>
+> | 原始决策 | 现状 | 依据 |
+> |---------|------|------|
+> | 消息头命名为 `MsgHead` | 更名为 `UserHead`，引入 `UserInfo`（userId + accessType + clientId） | ADR-0020 |
+> | 消息头含 `sourceAddress` 字段 | 已移除，回程路由由 `accessType` + Gateway `adapterTable_` 承担 | ADR-0024 |
+> | AiApiAdapter 通过 `req.head.sourceAddress` 回复 | 改为通过 `accessType` 查 `adapterTable_` 回程 | ADR-0024 |
+>
+> **以下决策仍然有效**：`gtidList` 统一列表、Router 统一遍历逻辑、消息命名规范、中转不变原则。最终消息头字段见 README §3.3（uid + gtidList + accessType + appType + sessionFlags）。
+
 ---
 
 ## 背景
@@ -24,12 +34,12 @@ ADR-0013 确定了 fan-out 由 Gateway 出向预埋、Router 拆 list 的机制�
 
 ## 决策
 
-**将 `GTID` 和 `fanOutGtids` 合并为统一的 `gtidList`。消息头从三字段缩减为两字段。**
+**将 `GTID` 和 `fanOutGtids` 合并为统一的 `gtidList`。（⚠️ 修订：原决策中消息头定义含 `sourceAddress`，该字段已于 ADR-0024 移除。gtidList 的合并逻辑仍然有效。）**
 
 | 字段 | 类型 | 含义 |
 |------|------|------|
 | **gtidList** | `vector<uint16_t>` | 目标 GTID 列表。通常长度=1（普通消息），fan-out 时长度>1 |
-| **sourceAddress** | `EoAddress` | 回复地址 |
+| **sourceAddress** | `EoAddress` | ~~回复地址~~（⚠️ 已于 ADR-0024 移除） |
 
 **Router 行为统一**：
 
@@ -48,7 +58,9 @@ for (auto gtid : msg.gtidList) {
 
 ## 实现
 
-### MsgHead — 共享消息头 struct
+### MsgHead — 共享消息头 struct（⚠️ 历史定义，已演变为 UserHead）
+
+> **修订**：以下 `MsgHead` 定义为 ADR-0014 原始设计。后续 ADR-0020 将其重命名为 `UserHead` 并引入 `UserInfo`（userId + accessType + clientId），ADR-0024 移除 `sourceAddress`。最终消息头字段见 README §3.3。`gtidList` 字段保留至今。
 
 消息头定义为 `common/message/MsgHead.mt`：
 
@@ -202,9 +214,11 @@ gtidList: StaticVector<uint16_t, 8>  // 或 std::array
 
 ## 与现有 ADR 的关系
 
-- ADR-0008：GTID 位结构定义不变
-- ADR-0011：`sourceAddress` 规则不变
-- ADR-0013：fan-out 机制不变（Gateway 预埋 + Router 拆），只是嵌入方式从独立字段改为往 gtidList 追加
+- **ADR-0008**：GTID 位结构定义不变
+- **ADR-0011**：`sourceAddress` 规则不变（⚠️ sourceAddress 后被 ADR-0024 移除）
+- **ADR-0013**：fan-out 机制不变（Gateway 预埋 + Router 拆），只是嵌入方式从独立字段改为往 gtidList 追加
+- **ADR-0020**：将 `MsgHead` 更名为 `UserHead`，引入 `UserInfo`（userId + accessType + clientId）结构
+- **ADR-0024**：移除 `sourceAddress` 字段，`accessType` 承担回程路由、fan-out 位图索引、源 Adapter 排除三重职责
 
 ---
 

@@ -1,7 +1,7 @@
 # Flow Hub
 
 > 一个基于 Actor 模型的消息驱动嵌入式编排平台  
-> 版本：v0.3  |  最后更新：2026-06-15
+> 版本：v0.4  |  最后更新：2026-07-01
 
 ---
 
@@ -32,6 +32,32 @@ Flow Hub 是一个基于 Actor 模型的消息驱动嵌入式编排平台。它�
 
 ---
 
+## 2.5 当前实现状态
+
+> **策略**：文档先行，代码后跟。README 描述目标架构全貌，以下标注当前代码实际状态。
+
+| 组件/机制 | 状态 | 说明 |
+|----------|------|------|
+| CliAdapter | ✅ 已实现 | stdin/stdout ↔ 内部消息 |
+| SessionMgr | ✅ 已实现 | 基础 GTID 分配/回收 |
+| SessionData | ✅ 已实现 | 基础消息转发 |
+| Router | ✅ 已实现 | GTID → TaskType 路由 |
+| AiChatBus | ✅ 已实现 | 单 AI 对话 |
+| BusinessMgr | ✅ 已实现 | 基础资源分配 |
+| ServiceGateway | ✅ 已实现 | 基础出向转发 |
+| AiApiAdapter | ✅ 已实现 | HTTP ↔ 内部消息翻译 |
+| AccessGateway | 📐 设计中 | 接入层分拣网关 |
+| ServiceMgr | 📐 设计中 | 设备注册表、fan-out 配置管理 |
+| WsAdapter | 📐 设计中 | WebSocket 接入 |
+| AutomationBus / DataManager | 📐 设计中 | 规则引擎、设备数据管理 |
+| MqttAdapter / CanAdapter 等 | 🔮 预留 | 工业协议适配 |
+| SessionFlags 编译期标志 | 📐 设计中 | ADR-0021 |
+| BatchFanOut / FanOutMsg | 📐 设计中 | ADR-0022 |
+| 哨兵 GTID 新建 Task | 📐 设计中 | ADR-0023 |
+| 注册/登录/登出完整生命周期 | 📐 设计中 | 当前仅基础 SessionSetup/Close |
+
+---
+
 ## 3. 核心设计理念
 
 ### 3.1 EO —— 最小业务逻辑单元
@@ -57,119 +83,129 @@ EO(Entity Object) 是本架构中最小的独立业务逻辑单元，采用 Acto
 | **BusinessContext** | 业务实例 → 服务层业务 EO 地址、运行状态、规则列表、设备数据（DataManager 写入） | BusinessMgr |
 | **ServiceContext** | 设备注册表、Adapter 注册表、fan-out 配置 | ServiceMgr |
 
+> **维护者 vs 读写者**：表中"维护者"指该 Context 的**生命周期管理者**（C 面 Mgr，负责 Context slot 的创建/销毁/分配）。**运行时读写**由 D 面 EO 执行（如 DataManager 写 BusinessContext 中的设备数据，AiChatBus 读写 AiChatContext），详见 ADR-0009。
+
 **原子性规则**：所有上下文修改必须与消息发送原子绑定，禁止在消息处理中间过程中修改上下文。日志/可观测性数据的写入不受此约束。
 
 ### 3.3 消息 —— 唯一的通信载体
 
-系统中所有通信均通过消息完成。所有消息统一携带两个字段：
+系统中所有通信均通过消息完成。每条消息由 **UserHead**（消息头）+ **payload**（业务数据）组成。UserHead 包含以下字段：
 
-| 字段 | 类型 | 含义 |
-|------|------|------|
-| **gtidList** | `vector<uint16_t>` | 目标 GTID 列表（通常 1 个，fan-out 时多个）。Router 遍历列表逐条路由 |
-| **sourceAddress** | `EoAddress` | 回复地址——接收方回消息时直接用 `sendTo(msg.sourceAddress, resp)` |
+| 字段 | 类型 | 填入者 | 说明 |
+|------|------|--------|------|
+| **uid** | `uint16_t` | Adapter（编译期 appType + 运行时 userId 拼装） | 用户标识：`[userId:8][AppType:8]`，全链路携带 |
+| **gtidList** | GTID 列表 | 前端（或 SessionMgr 分配后替换） | 目标 GTID 列表；序列号位全 1 = 新 Task 哨兵（ADR-0023） |
+| **accessType** | `AccessType` | Adapter（编译期常量） | 源 Adapter 标识；Gateway 回程路由键；fan-out 位图索引；源 Adapter 排除依据（ADR-0024） |
+| **appType** | `AppType` | Adapter（编译期常量，accessType 隐含） | 控制面请求携带；SessionMgr 闸门校验 + UserRecord 索引 |
+| **sessionFlags** | `SessionFlags` | Adapter（`make<AppType>()` 编译期构造） | 行为标志（如 `needAck`）；Business EO 运行时读取（ADR-0021） |
 
-**核心路由规则**：仅发往 Business 层 D 面 EO 的消息经 Router 中转，其他方向全部物理直连。
+payload 为业务相关内容，当前（AI 对话）即为上下文或请求/响应的对话内容（string），后续按需扩展。
+
+> **已废弃**：`sourceAddress` 字段已移除。回程路由由 Gateway 的 `adapterTable_[accessType]` 查表完成，源标识由 `accessType` 天然承担。详见 ADR-0024。
+
+> **命名为 UserHead 的缘由**：GTID 按发起方分为三类（ADR-0008）——**User**（0x7，用户直接发起的 Task）、System（0x0，系统运维 Task）、Other（0xC，系统发起的业务 Task）。`UserHead` 承载的信息（uid、accessType、appType、sessionFlags）是 **Adapter 发出、由用户操作触发的消息所特有的**——Adapter 知道用户是谁（uid）、通过哪种方式接入（accessType）、用的是哪种前端（appType）、需要哪些行为标志（sessionFlags）。系统自发消息（如 setup）不需要这些字段。原名 `MsgHead`（ADR-0014），后由 ADR-0020 更名为 `UserHead` 以体现这一语义区分。
+
+### 3.4 三层类型体系
+
+系统定义三种正交的类型来标识"怎么连"、"做什么"、"哪个任务"：
+
+| 类型 | 含义 | 可见范围 | 定义位置 |
+|------|------|----------|----------|
+| **AccessType** | Adapter 唯一标识——(AppType × 连接方式) 组合 | Access 层 + Gateway + SessionData（fan-out 位图） | `common/type/` |
+| **AppType** | 客户端功能集合——"做什么"（AiChat / SmartHome / …） | 前端 + Adapter + SessionMgr（闸门校验）+ SessionData（上下文同步判断） | `common/type/` |
+| **TaskType** | 原子业务任务——"哪个任务"（SingleAiChat / DeviceMonitor / …） | 全链路（GTID 高位编码） | `common/type/` |
+
+**关键约束**：
+- AppType 止于 Session 层——Business 层及以下不可见 AppType。AppType 特有的行为要求由 Adapter 编译期编码进 `sessionFlags`（ADR-0021）
+- 无 super TaskType——TaskType 正交，不存在组合多个 TaskType 的新 TaskType
+- 每个 AppType 包含一组正交 TaskType（编译期常量），SessionMgr 据此做 `NewTask` 闸门校验
+
+### 3.5 uid 编码
 
 ```
-发给 Business D 面 EO：
-  发送方 ──sendTo(Router, {gtidList: [gtid], sourceAddress, ...})──▶
-    Router 遍历 gtidList，对每个 GTID 提取 TaskType 位查表 → delegateTo(target, msg)
+uid = uint16_t，编码 [userId:8][AppType:8]
 
-从 Business D 面 EO 发出：
-  AiChatBus ──sendTo(target, {gtidList: [gtid], sourceAddress, ...})──▶ 直连
+MAX_USERS = 64（userId 上限）
+MAX_APP_TYPES = 64
+MAX_UID = 65536（全 16 位空间）
 ```
 
-**`sourceAddress` 填入规则**：
+实际有效的 uid 只有 64 × 64 = 4096 个。`MAX_UID` 设为 65536 而非 4096，是 **SessionData 以空间换时间** 的刻意设计：
 
-| 消息方向（发送方所在层） | sourceAddress 填什么 | 原因 |
-|------------------------|---------------------|------|
-| Session 层 → Business D 面 EO（经 Router） | `myAddress()` | 让 Business EO 直连回复到 Session 层 |
-| Business D 面 EO → 外（直连） | Router 地址 | 让对端回复时经 Router 查表回到 Business 层 |
-| Service 层 → 外（直连） | 无实质影响，可填 Gateway 地址 | Service 层发出的均为响应，不期待回复 |
+- **SessionData** 的 `userAccessBitset` 是 `uint64_t[65536]` 的 flat 数组（512 KB），直接用 uid 作为下标索引，无需解码。fan-out 是高频数据面操作，省一次 `[userId][appType]` 拆解换零翻译，性能更优。512 KB 的额外空间可接受。
+- **SessionMgr** 则不同——其 `UserRecord` 每项包含 `name[32]` + `static_vector<GTID, 128>`，若 flat 开 65536 项会浪费大量内存（~2 GB），不可接受。因此 SessionMgr 采用 `UserRecord[64][64]` 二维表，uid 解码为 `[userId][appType]` 后查表。
 
-**Router 定位**：Router 是 Business Layer D 面的一个 EO，不是全局路由设施。它遍历消息头中的 `gtidList`，对每个 GTID 提取 TaskType 位查表路由。单 GTID 就是遍历一次，fan-out 就是遍历多次——逻辑完全统一。
+uid 自携带 AppType（`uid & 0xFF`），无需额外字段或查表。同一真实用户在不同 AppType 下使用相同 username → 同一 userId（高 8 位同），不同 AppType（低 8 位不同）→ 不同 uid。fan-out 自动隔离。
 
-### 3.4 内存模型
+### 3.6 内存模型
 
 | 特性 | 说明 |
 |------|------|
-| **静态内存池** | 系统预分配固定大小的消息内存池，所有消息均从池中申请 |
-| **禁止运行时堆分配** | 业务路径上禁止 new / malloc，内存行为完全可预测 |
-| **框架管理生命周期** | 消息的创建、传递、释放由底层框架接管，业务 EO 不感知 |
+| **静态内存池** | Context 从预分配的静态内存池中申请，杜绝运行时堆分配 |
+| **禁止手动堆分配** | 业务路径上禁止手动 new / malloc，内存行为完全可预测 |
+| **框架管理生命周期** | 消息的创建、传递、释放由底层 CAF 框架接管，业务 EO 不感知 |
 | **Fire-and-Forget 模式** | 发送方发出消息后不保留引用、不等待确认、不负责释放 |
 
-当前采用 Fire-and-Forget 模式（发射后不管）。关于应用层消息确认重传机制的设计评估，参见架构决策记录 ADR-007。
+> **消息内存**：当前消息直接使用 CAF 框架原生的消息分配机制，未纳入静态内存池。消息进静态池列为远期设计计划。手动 `new` 绝对禁止。
 
 ---
 
 ## 4. 架构总览：一层接入 + 三层两面
 
-```mermaid
-graph TB
-    subgraph Access["Access Layer 接入层 不分面"]
-        CLI["CLIAdapter 非 EO"]
-        WS["WsAdapter 非 EO"]
-        AG["AccessGateway"]
-        CLI --> AG
-        WS --> AG
-    end
-
-    subgraph Session["Session Layer 会话层"]
-        SM["C-Plane SessionMgr"]
-        SD["D-Plane SessionData"]
-    end
-
-    subgraph Business["Business Layer 业务层"]
-        BM["C-Plane BusinessMgr"]
-        R["D-Plane Router"]
-        AI["D-Plane AiChatBus"]
-        AU["D-Plane AutomationBus"]
-        DM["D-Plane DataManager"]
-    end
-
-    subgraph Service["Service Layer 服务层"]
-        SVM["C-Plane ServiceMgr"]
-        SG["D-Plane ServiceGateway"]
-        MqttAd["MqttAdapter (EO)"]
-        ApiAd["AiApiAdapter (EO)"]
-        CanAd["CanAdapter (EO)"]
-    end
-
-    AG --> SM
-    AG --> SD
-    SM --> BM
-    SM -.-> AG
-    BM --> SVM
-    SVM --> BM
-    SD --> R
-    R --> AI
-    R --> AU
-    R --> DM
-    AI --> SD
-    AI --> SG
-    AU --> SG
-    DM --> SG
-    MqttAd --> SG
-    ApiAd --> SG
-    CanAd --> SG
-    ApiAd --> R
-    SVM --> SG
 ```
+┌──────────────────────────────────────────────────────────────┐
+│ Access Layer（接入层 · 不分面）                               │
+│                                                              │
+│   CLIAdapter ──── AccessGateway ──── WsAdapter               │
+│                                                              │
+└──────────────────────────────────────────────────────────────┘
+
+┌──────────────────────────────────────────────────────────────┐
+│ Session Layer（会话层）                                       │
+│                                                              │
+│   C-Plane: SessionMgr           D-Plane: SessionData         │
+│   · 身份管理（username↔userId）  · 下行透传（delegate）        │
+│   · GTID 分配/回收              · 上行 fan-out（BatchFanOut）  │
+│   · 闸门校验                    · 上下文同步触发               │
+│   · 登录/登出/注销              · BatchCounter 管理            │
+│                                                              │
+└──────────────────────────────────────────────────────────────┘
+
+┌──────────────────────────────────────────────────────────────┐
+│ Business Layer（业务层）                                      │
+│                                                              │
+│   C-Plane: BusinessMgr          D-Plane:                     │
+│   · 资源分配                      Router ─┬─ AiChatBus        │
+│   · BusinessContext 维护                 ├─ AutomationBus     │
+│                                          └─ DataManager      │
+│                                                              │
+└──────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────┐
+│ Service Layer（服务层）                                          │
+│                                                                 │
+│   C-Plane: ServiceMgr           D-Plane:                        │
+│   · 设备注册表               ServiceGateway ─┬─ MqttAdapter │
+│   · fan-out 配置                           ├─ AiApiAdapter │
+│                                            └─ CanAdapter   │
+│                                                                 │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+> 层间消息流转路径见 [§6 通信规则](#6-通信规则)。
 
 ### 各层一句话定位
 
 | 层 | 职责 | 分面 |
 |----|------|------|
 | **接入层** | 怎么连进来——把外部消息翻译成内部格式 | 不分面 |
-| **会话层** | 谁在说话——管会话、管消息收发 | C: 会话生命周期（重心）/ D: 消息包装转发 |
+| **会话层** | 谁在说话——管身份、管会话、管消息收发 | C: 会话生命周期（重心）/ D: 消息转发 + 上行 fan-out |
 | **业务层** | 要干什么——所有业务逻辑在这里 | C: 资源分配 / D: 路由+业务+规则引擎+数据管理（重心） |
 | **服务层** | 谁能干活——对接 AI、米家、Modbus、NPU 等 | C: 设备生命周期 / D: 统一外部服务入口+协议适配 |
 
-> **Session Layer 的不对称性**：重心在 C 面。"会话"天然是控制面概念——身份、生命周期、窗口关联、状态持久化。D 面（SessionData）的作用是剥离非控制类的杂活（消息包装、返回路径管理），让 Mgr 集中精力做控制决策。这与 Business Layer 相反——Business Layer 的重心在 D 面，因为"路由"天然是数据面概念。
+> **Session Layer 的不对称性**：重心在 C 面。"会话"天然是控制面概念——身份、生命周期、状态持久化。D 面（SessionData）的职责是消息转发和上行 fan-out——下行透传（零决策），上行广播（读 `userAccessBitset` 组装 `BatchFanOut`）。这与 Business Layer 相反——Business Layer 的重心在 D 面。
 >
-> **Window 与会话**：多个 Window（来自不同 Adapter 的连接窗口）可以属于同一个 Session。用户从 CLI 和 WebSocket 同时接入，共享同一段对话——这就是同一 Session 下的多个 Window。Window 与会话的映射由 SessionMgr 管理。
->
-> **所有流都有 GTID**：所有进入系统的流都携带 GTID——不管发起者是人、物、还是 Mgr。设备上报数据的 GTID 由 ServiceMgr 在配置时附加。流没有归属 → 无法暂停、无法调整频率、无法查询历史——因此每条流都必须关联一个 GTID。
+> **所有流都有 GTID**：所有进入系统的流都携带 GTID——不管发起者是人、物、还是 Mgr。流没有归属 → 无法暂停、无法调整频率、无法查询历史——因此每条流都必须关联一个 GTID。
 
 ---
 
@@ -179,16 +215,19 @@ graph TB
 Access Layer（接入层 · 不分面）
 ├── CLIAdapter               stdin/stdout -> 内部格式（非 EO，独立线程）
 ├── WsAdapter                WebSocket -> 内部格式（非 EO，独立线程）
-└── AccessGateway            分拣：控制指令 -> SessionMgr / 数据消息 -> SessionData
+└── AccessGateway            分拣：控制类→SessionMgr / 哨兵GTID→SessionMgr / 数据类→SessionData
 
 Session Layer（会话层）
-├── C-Plane: SessionMgr      会话创建/销毁，与 BusinessMgr 交互，维护 SessionContext
-└── D-Plane: SessionData     消息包装（填 gtidList + sourceAddress），转发至 Router
+├── C-Plane: SessionMgr      身份管理（username↔userId）、GTID 分配/回收、闸门校验、
+│                            登录/登出/注销流程、UserRecord 维护
+└── D-Plane: SessionData     下行透传（delegate Router，零拷贝）、上行 fan-out
+│                            （读 userAccessBitset → 组装 BatchFanOut → Gateway）、
+│                            上下文同步触发、BatchCounter 管理
 
 Business Layer（业务层）
 ├── C-Plane: BusinessMgr     资源分配、选择业务 EO、维护路由 context 和 BusinessContext
 └── D-Plane: Router          GTID 路由：提取 TaskType 位查表，delegate 零拷贝转发
-             AiChatBus       单 AI 对话
+             AiChatBus       单 AI 对话（读 sessionFlags.isNeedAck() 决定是否发 ACK）
              AiPanelBus      多 AI 讨论（裁判模式，未来）
              SceneBus        场景管理
              AutomationBus   规则引擎（跨生态设备编排核心）
@@ -208,11 +247,11 @@ Service Layer（服务层）
 
 所有外部设备通过 Adapter 翻译为内部消息后，经由 ServiceGateway 进入系统。Adapter 地位平等，协议差异完全封装在 Adapter 内部。
 
-**Service 层 Adapter 是 EO**：驱动源头为内部消息（收到内部 EO 消息后，主动向外部发起 HTTP/MQTT/CAN 等请求，原地阻塞等待回复）。`kMayBlock=true` 编译期标签使 CAF 以独立线程（detached）创建，阻塞不影响共享调度池。这与 Access 层 Adapter 不同——Access Adapter 的驱动源头是外部事件（stdin、WebSocket 帧），无法要求外部世界按 CAF 消息协议发送，因此 Access Adapter **不是 EO**，运行在独立线程/事件循环中，通过 `anonSendTo` 注入 actor 系统。
+**Service Adapter 是 EO**：驱动源头为内部消息（收到内部 EO 消息后，主动向外部发起 HTTP/MQTT/CAN 等请求，原地阻塞等待回复）。`kMayBlock=true` 编译期标签使 CAF 以独立线程（detached）创建，阻塞不影响共享调度池。这与 **Access Adapter**（CLIAdapter、WsAdapter）不同——Access Adapter 的驱动源头是外部事件（stdin、WebSocket 帧），无法要求外部世界按 CAF 消息协议发送，因此 Access Adapter **不是 EO**，运行在独立线程/事件循环中，通过 `anonSendTo` 注入 actor 系统。
 
 **Gateway 与 Router 的分发依据不同**：Gateway 按消息类型或消息内字段（如 `targetAi`）做映射——出向找 Adapter，fan-out 决定额外 GTID。Router 仅按 GTID 位运算做路由——不读消息内容，不改消息体。
 
-**fan-out 实现方式**：Gateway 在转发出向请求时查 fan-out 配置，若该请求的响应需要额外通知其他 GTID，则将额外 GTID 列表嵌入出向消息（有 fan-out 时通过 move 大字段 + 新增小字段构造新消息；无 fan-out 时 `delegate` 零拷贝转发）。Adapter 透传该列表至入向消息，打包发给 Router。Router 收到 GTID list 后逐条拆开路由。详见 §6.5。
+**fan-out 实现方式（下行）**：ServiceGateway 在转发出向请求时查 fan-out 配置，若该请求的响应需要额外通知其他 GTID，则将额外 GTID 列表嵌入出向消息。Service Adapter 透传该列表至入向消息，打包发给 Router。Router 收到 GTID list 后逐条拆开路由。上行 fan-out 采用 BatchFanOut/FanOutMsg 两级机制（ADR-0022）。
 
 ---
 
@@ -220,23 +259,53 @@ Service Layer（服务层）
 
 ### 6.1 路由规则
 
-| 通信方向 | 规则 |
-|---------|------|
-| **Adapter → AccessGateway** | 同层（接入层内部），直接通信 |
-| **AccessGateway → SessionMgr / SessionData** | 跨层（接入层→会话层），地址在启动时下发 |
-| **C 面 → C 面** | 相邻层点对点直连，推荐 `requestThen` |
-| **→ Business D 面 EO** | 经 Business 层 Router 中转。gtidList 中每个 GTID 的 TaskType 位即路由键 |
-| **Business D 面 EO → 外** | 物理直连。下层地址记录在 EO 实例成员中（系统 setup 时由 BusinessMgr 下发） |
-| **同层 D 面 ↔ D 面** | 直接通信，目标地址记录在对应业务的上下文中 |
-| **C 面 ↔ 同层 D 面** | 可直接通信 |
-| **Adapter → Router** | 入向直达。Adapter 使用请求中携带的 `sourceAddress`（Router 地址）直接回复 |
-| **Adapter → ServiceGateway** | 服务层内部（出向请求路径），直接通信 |
-| **ServiceMgr → ServiceGateway** | C 面配置 D 面（Adapter 注册表/fan-out 配置），直接通信 |
-| **ServiceGateway → Adapter** | 服务层内部。Gateway 按 Adapter 注册表查目标地址，直接转发 |
+**基本原则**：
 
-> **判定原则**：只有 Business 层 D 面 EO 有地址映射（热备/负载均衡）需求，因此只有发往它们的消息需要经 Router。其他层当前无此需求，直连即可。若将来其他层也引入热备，应在该层内增设自己的 Router。
+1. **同层内**：C 面与 D 面可通信，D 面内部可通信。Access 层不分面，所有消息经 AccessGateway 中转。
 
-### 6.2 Router 与 GTID 路由
+2. **跨层**：只允许同面之间通信——C 面只能发给相邻层的 C 面，D 面只能发给相邻层的 D 面。唯一的例外是 Access 层（不分面），AccessGateway 可同时连接 Session 层的 C 面和 D 面。
+
+3. **D 面入向经 Router/Gateway 中转，出向直发**。这条规则对 Business 层和 Service 层都适用：
+
+   | 方向 | Business 层 | Service 层 |
+   |------|------------|-----------|
+   | **入向**（消息进入本层 D 面） | 经 Router 中转 | 经 Router 中转（Service Adapter 入向直达 Router） |
+   | **出向**（消息离开本层 D 面） | 直发目标 | 经 ServiceGateway 转发至 Service Adapter |
+
+   **例**：BusinessEO 发消息给 Service Adapter → `BusinessEO → ServiceGateway → ServiceAdapter`（出向）。Service Adapter 的应答 → `ServiceAdapter → Router → BusinessEO`（入向）。
+
+4. **Session 层 D 面**只有一个 SessionData 实例，无内部路由——下行 `delegate(Router)` 零拷贝转发，上行组装 `BatchFanOut` 发往 Gateway（ADR-0022）。
+
+5. **C 面纵向链**：`SessionMgr → BusinessMgr → ServiceMgr → ServiceGateway`，相邻层点对点直连。其中 ServiceMgr → ServiceGateway 是 C 面配置 D 面（Service Adapter 注册表、fan-out 配置）。
+
+**路由规则速查**：
+
+| 路径 | 说明 |
+|------|------|
+| Access Adapter → AccessGateway | 接入层内部 |
+| AccessGateway → SessionMgr（控制）/ SessionData（数据） | 跨层，分拣规则见 §6.2 |
+| SessionData → Router | D 面下行，delegate 零拷贝 |
+| Router → Business EO | 按 GTID TaskType 位查表 |
+| Business EO → SessionData | D 面上行（ACK/回复），直连 |
+| Business EO → ServiceGateway | D 面出向发往Service，Service层内部经由ServiceGateway中转 |
+| ServiceGateway → Service Adapter | Service 层内部出向 |
+| Service Adapter → Router | Service 层入向应答，不经 ServiceGateway |
+| SessionData → Gateway（BatchFanOut） | 上行 fan-out（ADR-0022） |
+| Gateway → Access Adapter（FanOutMsg） | fan-out 拆解分发（ADR-0022） |
+| C 面纵向：SM → BM → SVM | 相邻层点对点 |
+
+### 6.2 AccessGateway 分拣规则
+
+AccessGateway 根据消息特征将入向消息路由到不同目标：
+
+| 消息特征 | 路由目标 |
+|---------|---------|
+| GTID 序列号位全 1（哨兵值，ADR-0023） | SessionMgr（新建 Task） |
+| 控制类请求（注册/登录/登出/注销/删除会话） | SessionMgr |
+| 带正式 GTID 的数据面请求 | SessionData（正常数据路径） |
+| 无 GTID 且非控制类 | 拒绝（返回 `NO_GTID_NEW_TASK` 错误） |
+
+### 6.3 Router 与 GTID 路由
 
 Router 是 Business Layer D 面的一个 EO，职责是遍历消息头中的 `gtidList`，对每个 GTID 提取 TaskType 位，将消息投递给正确的 Business D 面 EO 实例。
 
@@ -257,51 +326,169 @@ Router 对每个 GTID：
 
 **负载均衡**：Router 维护每个 TaskType 对应的实例池，从池中任选一个实例投递。因 Context 存储在共享的 TaskPool 中，不同实例处理同一 GTID 的消息无碍——原子性规则保证同一时刻仅一条消息在处理。
 
-**消息流转**：Router 使用 `delegate()` 零拷贝转发，不修改消息体。`sourceAddress` 字段由发送方预先填入，Router 不干预。
+**消息流转**：Router 使用 `delegate()` 零拷贝转发，不修改消息体。
 
-### 6.3 会话建立流程（Setup）
+### 6.4 会话生命周期
 
-```mermaid
-sequenceDiagram
-    participant AG as AccessGateway
-    participant SMC as SessionMgr
-    participant BMC as BusinessMgr
-    participant R as Router
-    participant AI as AiChatBus
-    participant SVC as ServiceMgr
-    participant SG as ServiceGateway
+#### 注册（纯 C 面）
 
-    Note over AG,SG: 用户发起 new 命令
-
-    AG->>SMC: NewSession
-
-    Note over SMC: 通过 TaskPool 分配 GTID<br/>初始化 Context
-
-    SMC->>BMC: SetupReq{gtid, taskType}
-    BMC->>R: 验证通路
-    R->>AI: 验证通路
-    BMC->>SVC: SetupReq{gtid}
-    SVC->>SG: 验证通路
-
-    Note over SVC,SG: 确认线路正常
-
-    SG-->>SVC: OK
-    SVC-->>BMC: SetupResp
-    AI-->>R: OK
-    R-->>BMC: OK
-
-    BMC-->>SMC: SetupResp
-
-    Note over SMC: 写入 SessionContext
-
-    SMC-->>AG: SessionReady
+```
+前端 ─RegisterReq{username}─▶ Access Adapter ─▶ Gateway ─▶ SessionMgr
+                                                              │
+                                         检查 username 是否已注册
+                                         从 uidBitset 分配新 userId
+                                         初始化 UserRecord[userId][appType]
+                                         usernameToId_[username] = userId
+                                                              │
+前端 ◀──RegisterRsp{userId}── Access Adapter ◀── Gateway ◀────┘
 ```
 
-- 全程 C 面对 C 面；SessionMgr 通过 TaskPool 分配 GTID 并初始化 Context
-- BusinessMgr 将 SetupReq 同时发往 Router/Business EO 和服务层，验证全链路通路
-- 通路确认后 SessionMgr 写入 SessionContext，会话就绪
+注册只分配 userId，不建立连接状态。注册成功后需另行登录。
 
-### 6.4 AI 对话消息流转
+#### 登录（C 面交互）
+
+```
+前端 ─LoginReq{userId}─▶ Access Adapter ─▶ Gateway ─▶ SessionMgr
+                                                          │
+                                         校验 userId + appType 合法性
+                                            │
+                                ┌───────────┴───────────┐
+                                ▼                       ▼
+                           校验不通过               校验通过
+                                │                       │
+                           拒绝登录                 取出 GTID 列表
+                                │                 发 UserLogin{uid, appType, accessType, gtids}
+                                │                       │
+                                │           ┌───────────┘
+                                │           ▼
+                                │     SessionData
+                                │           │
+                                │           ├─ 置 userAccessBitset[uid] 中 accessType 位
+                                │           ├─ 统计活跃 adapter 数（0→1 = 冷启动）
+                                │           ├─ 判断是否需要数据面预处理
+                                │           │
+                                │           └─ 回复 SessionMgr：{ activeCount, dataReady }
+                                │                       │
+                                │           ┌───────────┘
+                                │           ▼
+                                │      SessionMgr 回复前端
+                                │           │
+                                │   ┌───────┴───────┐
+                                │   ▼               ▼
+                                │ dataReady      !dataReady
+                                │   │               │
+                                │ LoginRsp     LoginRsp{needWait=true}
+                                │ 前端可操作    前端等待数据面就绪
+                                │                   │
+                                │              SessionData 异步推送
+                                │              （如历史数据逐条下发）
+                                │                   │
+                                │              推送完毕 → 发 DataReady 给前端
+                                │                   │
+                                │              前端收到后可操作
+```
+
+**流程要点**：
+
+- **D→C 必须先于 C→前端**：SessionData 的回复是 SessionMgr 响应用户的前提。SessionData 告知 Mgr 数据面是否已就绪（`dataReady`），Mgr 据此决定前端响应内容。
+- **三种结果**：
+  - 控制面校验不通过 → 拒绝登录。
+  - 控制面就绪 + 数据面已就绪 → 前端立即可操作。
+  - 控制面就绪 + 数据面未就绪 → 前端进入等待态，直到收到数据面的就绪推送后才开放操作。
+- **冷启动对称**：登录时活跃数 0→1（对应登出时活跃数→0 可能触发持久化——未来预留）。
+- **首次登录 vs 后续登录**：
+  - **首次登录**：`UserRecord` 中 GTID 列表为空 → SessionData 置位后直接回复，不触发额外动作。
+  - **后续登录**（用户在其他设备上已有活跃会话）：GTID 列表非空 → SessionData 触发**上下文同步**——从 `batchCounterResources_` 申请 BatchCounter → 组装批量消息（含所有历史 GTID）→ 发往 Router → Router 逐 GTID `delegate` 给对应 Business EO → 各 Business EO 返回历史数据 → **直回源 Adapter**（不经 fan-out，只有刚登录的前端需要这份数据）。上下文同步完成后 SessionData 回复 `dataReady=true`。
+- Access Adapter 收到 LoginRsp 后将 userId 记入 `userToConn_`。
+
+#### 登出（C 面交互）
+
+```
+前端 ─LogoutReq─▶ Access Adapter ─▶ Gateway ─▶ SessionMgr
+                                                   │
+                                    发 UserLogout{uid, accessType}
+                                                   │
+                                                   ▼
+                                             SessionData
+                                                   │
+                                                   ├─ 清 userAccessBitset[uid] 中 accessType 位
+                                                   ├─ 统计剩余活跃 adapter 数
+                                                   └─ 回复 SessionMgr：{ activeCount }
+                                                   │
+                                                   ▼
+前端 ◀──LogoutRsp── Access Adapter ◀── Gateway ◀── SessionMgr
+```
+
+- Access Adapter **暂不**清除 `userToConn_[userId]`——等回路确认（收到 LogoutRsp）后再清。
+- 活跃数归零时，未来可触发 context 持久化（当前预留）。
+- 断连触发的自动登出流程与此完全一致。
+
+#### 注销（纯 C 面）
+
+```
+前端 ─DeleteReq─▶ Access Adapter ─▶ Gateway ─▶ SessionMgr
+                                                   │
+                                    遍历 UserRecord[userId][appType] 回收所有 GTID
+                                    清空 UserRecord，移除 usernameToId_ 映射
+                                    释放 userId（清 uidBitset 对应位）
+                                                   │
+                                                   ▼
+前端 ◀──DeleteRsp── Access Adapter ◀── Gateway ◀────┘
+```
+
+D 面不感知注销——uid 已删除，后续无消息到达。userId 被复用时，SessionMgr 先发 `UserReset{uid}` 给 SessionData 清零历史 bitset。
+
+#### 新建 Task（捆绑请求，ADR-0023）
+
+不存在独立的"建空会话"控制请求。前端第一条消息携带**哨兵 GTID**（seq 位全 1）+ 首条数据内容一起发出：
+
+```
+前端 ─哨兵GTID + 数据─▶ Access Adapter ─▶ Gateway
+                                              │
+                             检测 seq 全 1 → SessionMgr
+                                              │
+                             闸门校验：AppType 是否包含该 TaskType
+                             分配正式 GTID，写入 UserRecord
+                             替换哨兵值为正式 GTID，连同原始数据
+                                              │
+                                              ▼
+                                        SessionData → Router → BusinessEO
+                                                                   │
+                                                  处理首条数据，发 ACK
+                                                                   │
+                                                                   ▼
+                                                         SessionData → BatchFanOut → 各 Access Adapter
+```
+
+其他端收到含陌生 GTID 的 ACK 即知新会话已创建——**ACK fan-out 即通知**，无需单独的"会话创建通知"。源端收到 ACK 即确认会话创建成功 + 消息已处理。
+
+#### 删除会话（C 面交互）
+
+纯控制请求，走三角形路径——SessionMgr 做裁判，SessionData 做通知：
+
+```
+前端 ─DeleteSessionReq{gtid}─▶ Access Adapter ─▶ Gateway ─▶ SessionMgr
+                                                                │
+                                               校验 gtid 属于该 user
+                                               从 GTID 池回收，从 UserRecord 移除
+                                               将结果发给 SessionData
+                                                                │
+                                                                ▼
+                                                          SessionData
+                                                                │
+                                               组装 BatchFanOut（含源端）
+                                               → Gateway → 各 Access Adapter
+```
+
+源 Access Adapter 收到即确认删除成功；其他端收到后从会话列表移除该 GTID。
+
+---
+
+## 7. 典型消息流示例
+
+> §6 定义了通用通信规则和生命周期。本章以两个具体流程序列图展示规则如何落地。
+
+### 7.1 AI 对话消息流
 
 ```mermaid
 sequenceDiagram
@@ -318,57 +505,51 @@ sequenceDiagram
     Note over User,ExtAPI: 下行（用户 → AI API）
 
     User->>CLI: 输入文本
-    CLI->>AG: chat
-    AG->>SD: AiChatReq{gtidList:[gtid], sourceAddress=SD}
-    SD->>R: AiChatReq（gtidList）
+    CLI->>AG: chat（填入 uid, accessType, sessionFlags）
+    AG->>SD: AiChatReq
+    SD->>R: delegate(Router) 零拷贝转发
     Note over R: 遍历 gtidList → TaskType=AiChat → 查表 → AiChatBus
-    R->>AI: AiChatReq
+    R->>AI: AiChatReq（delegate 零拷贝）
     Note over AI: 处理请求，组装服务层请求
-    AI->>SG: AiChatToSvcReq{gtidList:[gtid], sourceAddress=R}
+    AI->>SG: AiChatToSvcReq
     SG->>ApiAd: 翻译后的 HTTP 请求
     ApiAd->>ExtAPI: POST /v1/chat
 
-    Note over User,ExtAPI: 上行（AI API → 用户）
+    Note over User,ExtAPI: 上行（AI API → 用户 + ACK 广播）
 
     ExtAPI-->>ApiAd: 响应数据
-    Note over ApiAd: 解析 → AiChatFromSvcResp{gtidList:[gtid]}
-    ApiAd-->>R: AiChatFromSvcResp<br/>（使用 sourceAddress 直达 Router）
-    Note over R: 遍历 gtidList → TaskType=AiChat → 查表 → AiChatBus
+    Note over ApiAd: 解析 → AiChatFromSvcResp
+    ApiAd-->>R: AiChatFromSvcResp
     R-->>AI: AiChatFromSvcResp
-    Note over AI: 整合结果
-    AI-->>SD: AiChatResp{gtidList:[gtid]}（直连，不走 Router）
-    SD-->>AG: 包装消息
-    AG-->>CLI: 内部格式
-    CLI-->>User: 显示结果
+    Note over AI: 整合结果，读 sessionFlags.isNeedAck()<br/>→ 发 ACK（含 seq + content）
+    AI-->>SD: AiChatMsgAck（直连，不走 Router）
+    Note over SD: 读 uid → userAccessBitset[uid]<br/>→ 组装 BatchFanOut → Gateway
+    SD-->>AG: BatchFanOut{head, payload, targets}
+    Note over AG: 遍历 targets → 逐 Access Adapter 发 FanOutMsg
+    AG-->>CLI: FanOutMsg
+    CLI-->>User: 显示结果 / 消息同步
 ```
 
-> **关键点**：消息头为 `gtidList + sourceAddress`。Router 遍历 gtidList 对每个 GTID 提取 TaskType 位查表，单 GTID（常规）和 多 GTID（fan-out）逻辑完全统一。出向消息物理直连。
+> **下行**：全链路仅转发——Adapter 填入 uid/accessType/sessionFlags 后原样透传，SessionData `delegate(Router)` 零拷贝。**不做任何 fan-out**。
+>
+> **上行**：AiChatBus 处理完毕、写 context、分配 seq 后，读 `sessionFlags.isNeedAck()` 决定是否发 ACK。ACK 和 AI 回复经 SessionData → `BatchFanOut` → Gateway → 各 Access Adapter 广播。Access Adapter 据 `head.accessType` 判断自己是源还是其他端，发"送达通知"或"同步通知"给前端。
+>
+> **消息负载**：`AiChatRequest` 携带 `{targetAi, messagesJson, temperature}`，对话历史存于 `AiChatContext.messagesBuffer`（静态定长内存），AiChatBus 纯追加写入、整段拷贝发出，不做解析（详见 ADR-0015）。
 
-- AiChatBus 直接通过 ServiceGateway 调用 AI API，Gateway 查 Adapter 注册表转发给对应 Adapter
-- Adapter 入向使用消息头中的 `sourceAddress`（Business D 面 EO 发送时填入 Router 地址）直接回复 Router
-- AiApiAdapter 是纯粹的协议翻译器（内部消息 ↔ HTTP），不参与路由决策
-- **消息负载**：`AiChatRequest` 携带 `{targetAi, messagesJson, temperature}`，其中 `messagesJson` 为 OpenAI 兼容的 `messages` 数组 JSON 字符串。对话历史存于 `AiChatContext.messagesBuffer`（静态定长内存），AiChatBus 纯追加写入、整段拷贝发出，不做解析（详见 ADR-0015）
+### 7.2 设备数据流与 fan-out
 
-### 6.5 设备数据流与 fan-out
+**下行 fan-out**（Service 层，ADR-0013）：ServiceGateway 在转发出向请求时查 fan-out 配置，若该请求的响应需要额外通知其他 GTID（如传感器读数抄送 DataManager），则将额外 GTID 列表嵌入出向消息。Service Adapter 透传该列表至入向消息，打包发给 Router。Router 收到 GTID list 后逐条拆开路由。
 
-**fan-out 实现机制（Gateway 出向预埋）**：
-
-1. Gateway 收到 Business EO 的出向请求（如"读传感器X"）
-2. Gateway 查 fan-out 配置：该请求的响应是否需要额外通知 DataManager / AutomationBus
-3. 若需要 fan-out，Gateway 将额外 GTID 列表嵌入出向消息（如 `fanOutGtids: [0xC010]`）。大字段（string、vector）通过 `std::move` 零拷贝转移，仅新增小字段的微小分配。若无需 fan-out，走 `delegate()` 零拷贝转发
-4. Adapter 做出向 HTTP 请求、收 HTTP 响应——透传 GTID list，不理解其含义
-5. Adapter 入向时将所有信息（含 GTID list）打包发给 Router（`sourceAddress` 直达）
-6. Router 收到消息，遍历 gtidList，每个 GTID 独立路由到对应 Business EO
+**上行 fan-out**（Session 层，ADR-0022）：ACK 和 AI 回复等上行广播采用 BatchFanOut/FanOutMsg 两级机制，见 §6.5。两种 fan-out 互不取代，各司其职。
 
 ```mermaid
 sequenceDiagram
     participant EO as Business EO
     participant SG as ServiceGateway
-    participant Ad as Adapter
+    participant Ad as Service Adapter
     participant Dev as 外部设备
     participant R as Router
     participant DM as DataManager
-    participant AU as AutomationBus
 
     Note over EO,SG: 出向（请求）
     EO->>SG: 读传感器X（gtid=0x7005）
@@ -380,39 +561,39 @@ sequenceDiagram
     Dev-->>Ad: 数据
     Note over Ad: 打包 GTID list 发 Router
     Ad-->>R: SensorData{gtidList:[0x7005,0xC010]}
-    Note over R,AU: Router 拆 GTID list 逐条路由
+    Note over R,DM: Router 拆 GTID list 逐条路由
     R->>EO: 原始响应 (0x7005)
     R->>DM: fan-out 抄送 (0xC010)
 ```
 
-**fan-out 配置**由 ServiceMgr 下发至 Gateway，格式为 `出向消息类型 → [额外 GTID 列表]`。AI Chat 类消息通常无需 fan-out，传感器读数等常需要抄送 DataManager。
+**fan-out 配置**由 ServiceMgr 下发至 Gateway，格式为 `出向消息类型 → [额外 GTID 列表]`。AI Chat 类消息通常无需下行 fan-out，传感器读数等常需要抄送 DataManager。
 
 **消费者有两种获取数据的方式**：
 
 | 方式 | 路径 | 优点 | 缺点 |
 |---|---|---|---|
 | **快路径** | 从 BusinessContext 读 DataManager 写入的冷数据 | 零消息开销，同 Flow 内完成 | 数据可能有延迟 |
-| **慢路径** | Adapter fan-out 实时推送 | 实时，拿到最新值 | 跨 Flow，有消息开销 |
+| **慢路径** | Service Adapter fan-out 实时推送 | 实时，拿到最新值 | 跨 Flow，有消息开销 |
 
 **选择权在消费者。**
 
-- fan-out 配置集中在 Gateway，Adapter 只做透传——不感知全局拓扑
-- Adapter 的订阅管理（MQTT topic、CAN 信号过滤）由 ServiceMgr 直接指挥
-- 行为表逻辑（条件判断、触发规则）在 AutomationBus 中完成
-
 ---
 
-## 7. 可扩展性
+## 8. 可扩展性
 
-### 7.1 协议扩展
+### 8.1 协议扩展
 
 新增智能家居协议或工业总线：新增 Adapter → 向 ServiceGateway 注册 → ServiceMgr 配置 Adapter 注册表与 fan-out 配置。业务层零修改。
 
-### 7.2 跨生态编排
+### 8.2 跨生态编排
 
 AutomationBus 作为规则引擎，不感知底层协议。一个规则可同时触发米家、Modbus、HomeKit 设备的动作，也可响应 NPU 视觉检测、定时器等任意事件源。规则以结构化文本（JSON）下发，支持运行中增删改。
 
-### 7.3 Router 分阶段演进
+### 8.3 AppType 扩展
+
+新增前端 App 类型：定义新 `AppType` 枚举值 → 在 `SessionFlags::make<>()` 的 switch 中加映射 → 新建对应 Access Adapter（每种需要的连接方式一个）→ 在 SessionMgr 的 AppType→TaskType 集合中声明包含关系。Business 层零修改。
+
+### 8.4 Router 分阶段演进
 
 | Phase | 版本 | 功能 |
 |-------|------|------|
@@ -423,7 +604,7 @@ AutomationBus 作为规则引擎，不感知底层协议。一个规则可同时
 
 ---
 
-## 8. 框架抽象层（设计预留，待实现）
+## 9. 框架抽象层（设计预留，待实现）
 
 > **当前状态**：Demo 阶段直接使用 CAF 原生接口。框架抽象层将在核心链路跑通后实施。
 
@@ -433,38 +614,60 @@ AutomationBus 作为规则引擎，不感知底层协议。一个规则可同时
 
 ---
 
-## 9. 关键设计决策
+## 10. 关键设计决策
+
+完整架构决策记录在 `docs/adr/` 目录下。
+
+| 编号 | 决策 | 状态 |
+|------|------|------|
+| [0008](./docs/adr/0008-gtid.md) | 任务标识采用 GTID（General Task Identifier） | 已采纳 |
+| [0009](./docs/adr/0009-gtid-context-rules.md) | GTID Context 访问规则、物理存储与映射表同步协议 | 已采纳 |
+| [0010](./docs/adr/0010-eo-context-type.md) | EO 强制声明 ContextType 模板参数 | 已采纳 |
+| [0011](./docs/adr/0011-gtid-routing-key.md) | GTID 替代虚拟 ID 作为路由键，Router 定位为层内设施 | 已采纳 |
+| [0012](./docs/adr/0012-remove-protocol-gateway.md) | 取消 ProtocolGateway，统一为 ServiceGateway | 已采纳 |
+| [0013](./docs/adr/0013-fan-out-gateway-embed.md) | fan-out 实现机制——Gateway 出向预埋 GTID 列表（下行 fan-out） | 已采纳 |
+| [0014](./docs/adr/0014-gtid-list-header.md) | 消息头统一为 gtidList | 已采纳 |
+| [0015](./docs/adr/0015-ai-chat-context-message.md) | AI Chat Context 消息格式 | 已采纳 |
+| [0016](./docs/adr/0016-eo-env-wrapper.md) | 引入 EoEnv 包装层，彻底隐藏 CAF | 已采纳 |
+| [0017](./docs/adr/0017-mayblock-compile-time-tag.md) | 编译期标签 `kMayBlock` 自动选择 Actor 线程模式 | 已采纳 |
+| [0018](./docs/adr/0018-eo-zero-copy-delegate.md) | EoBase 消息转发零拷贝优化 | 已采纳 |
+| [0019](./docs/adr/0019-router-route-table.md) | Router 路由表实现——定长数组 + Config/Reconfig 协议 | 已采纳 |
+| [0020](./docs/adr/0020-seq-version-control.md) | AiChatBus 序列号版本控制（抢占式请求） | 已采纳 |
+| [0021](./docs/adr/0021-session-flags-compile-time.md) | SessionFlags 编译期 flag 映射模式 | 已采纳 |
+| [0022](./docs/adr/0022-batch-fanout-two-level.md) | BatchFanOut/FanOutMsg 两级上行广播机制 | 已采纳 |
+| [0023](./docs/adr/0023-bundled-request-gtid-sentinel.md) | 捆绑请求 + GTID 哨兵值新建 Task 协议 | 已采纳 |
+| [0024](./docs/adr/0024-head-accesstype-reuse.md) | head.accessType 复用替代 sourceAddress 字段 | 已采纳 |
+
+### 其他关键决策（未成文为独立 ADR）
 
 | 决策 | 结论 | 理由 |
 |------|------|------|
 | 无状态 EO + 外部上下文 | 采用 | 热备切换无感、可独立测试、状态可审计 |
-| 静态内存池 + 禁止堆分配 | 采用 | 确定性内存行为，嵌入式友好 |
-| GTID + sourceAddress 消息头 | 采用 | gtidList 支持单/多目标，Router 遍历路由逻辑统一 |
-| D 面消息经 Router 中转 | 采用 | 消息路径可控，映射集中管理 |
+| 静态内存池 + 禁止手动堆分配 | 采用 | 确定性内存行为，嵌入式友好 |
 | 仅业务层支持多实例 | 采用 | 会话层 I/O 密集不占 CPU，服务层瓶颈在外部设备 |
+| Adapter 按 (AppType × 连接方式) 独立 | 采用 | Adapter 内 client 天然同质，fan-out 零过滤 |
+| 同一 Access Adapter 内 user 单连接 | 采用 | O(1) 直查，砍掉多连接管理复杂度 |
+| userId 按 AppType 隔离 | 采用 | fan-out 自动隔离，无需 AppType 过滤 |
+| 消息落地后才同步（ACK 上行广播） | 采用 | ACK 在 AiChatBus 写 context 后发出，消除不一致窗口 |
+| Business 层不感知 AppType | 采用 | AppType 止于 Session 层，行为差异由 sessionFlags 编码 |
 | 应用层消息确认重传 | 废弃 | EO 崩溃不应是常态，根因应在代码质量与测试中消除 |
 | 消息体持久化缓存 | 废弃 | 仅用于配合重传，重传不做则无意义 |
-| Service 层统一入口 ServiceGateway | 采用 | 所有 Adapter 平等注册，协议差异封装在 Adapter 内部 |
-| AiApiSvc / MiHomeSvc / DeviceGateway 取消 | 采用 | Adapter → Gateway → Router 直达 Business EO，不需要中间 EO |
-| DataManager 放在 Business 层 | 采用 | 跨层写 Context 破坏分层隔离，同层内读写是自然的架构约束 |
-| Session Layer C 面重 D 面轻 | 采用 | "会话"是控制面概念；D 面剥离杂活供 Mgr 专注决策 |
-| 所有流都携带 GTID | 采用 | 无归属则无法暂停/调频/查历史 |
-
-完整决策分析记录在 `docs/adr/` 目录下。
 
 ---
 
-## 10. 目录结构
+## 11. 目录结构
 
 ```
 flowHub/
 ├── docs/
-│   ├── architecture/
-│   │   └── OVERVIEW.md
-│   └── adr/
+│   ├── adr/                        <- 架构决策记录（0008~0024）
+│   ├── architecture/               <- 架构文档（待建设）
+│   ├── access-session-design-checklist.md   <- Access-Session 设计决策路线图（工作文档）
+│   └── access-session-design-iteration-log.md <- 迭代记录（工作文档）
 │
 ├── src/
 │   ├── fw/                         <- 框架抽象层（待实现）
+│   ├── common/                     <- 公共定义（类型、消息、SessionFlags 等）
 │   ├── utils/                      <- 工具
 │   │
 │   ├── access/                     <- 接入层（不分面）
@@ -493,7 +696,6 @@ flowHub/
 │   │   │
 │   │   └── service/
 │   │       ├── ServiceGateway.hpp / cpp
-
 │   │       ├── AiApiAdapter.hpp / cpp
 │   │       ├── MqttAdapter.hpp / cpp
 │   │       ├── CanAdapter.hpp / cpp        （预留）
@@ -510,7 +712,7 @@ flowHub/
 
 ---
 
-## 11. 编码约定
+## 12. 编码约定
 
 | 约定 | 说明 |
 |------|------|
@@ -522,7 +724,7 @@ flowHub/
 
 ---
 
-## 12. 命名规范
+## 13. 命名规范
 
 | 角色 | 命名规则 | 示例 |
 |------|---------|------|
@@ -536,4 +738,6 @@ flowHub/
 | 接入层网关 | `AccessGateway` | 固定名称 |
 
 ---
+
+> **设计参考**：Access-Session 层的完整设计决策路线图见 `docs/access-session-design-checklist.md`（9 轮确认，全部通过）。迭代记录见 `docs/access-session-design-iteration-log.md`。
 
