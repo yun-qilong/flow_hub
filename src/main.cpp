@@ -5,11 +5,14 @@
 #include "fw/EoEnv.hpp"
 #include "generated/TaskType.hpp"
 
+#include "access/AccessGateway.hpp"
 #include "access/CliAdapter.hpp"
+#include "CPlane/BusinessMgr.hpp"
 #include "DPlane/business/AiChatBus.hpp"
 #include "DPlane/business/Router.hpp"
 #include "DPlane/service/AiApiAdapter.hpp"
 #include "DPlane/service/ServiceGateway.hpp"
+#include "DPlane/service/ServiceMgr.hpp"
 #include "DPlane/session/SessionData.hpp"
 #include "DPlane/session/SessionMgr.hpp"
 
@@ -17,7 +20,6 @@
 #include <cstdlib>
 #include <iostream>
 #include <string>
-#include <thread>
 
 using namespace common;
 using namespace common::message;
@@ -54,42 +56,36 @@ int main()
               << "  API: " << apiUrl << "\n"
               << "  Model: " << (model ? model : "(default)") << "\n";
 
-    // ===== 1. 创建所有 EO（按依赖顺序，地址通过构造函数注入）=====
+    // ===== 1. 创建所有 EO（按分层顺序：Access → Session → Business → Service）=====
 
-    // 服务层 — kMayBlock=true，createEo 自动以 detached 创建
-    auto aiApiAdapter =
-        env.createEo<DPlane::service::AiApiAdapter>(apiUrl, apiKey, model ? model : "default");
+    // --- Access 层 ---
+    // CliAdapter 先创建，AccessGateway 构造时接收其地址并向其发 TempConfig
+    access::CliAdapter cliAdapter(env.system());
+    auto accessGateway = env.createEo<access::AccessGateway>(cliAdapter.myAddress());
 
-    // 服务层 — ServiceGateway（统一入口，ADR-0012）
-    auto serviceGateway = env.createEo<DPlane::service::ServiceGateway>(aiApiAdapter);
+    // --- Session 层 ---
+    auto sessionData = env.createEo<DPlane::session::SessionData>(accessGateway);
+    auto sessionMgr = env.createEo<DPlane::session::SessionMgr>(pool, accessGateway, sessionData);
 
-    // 会话层 — SessionMgr 管理 GTID 分配/回收
-    auto sessionMgr = env.createEo<DPlane::session::SessionMgr>(pool);
-
-    // 业务层 — Router
-    auto router = env.createEo<DPlane::business::Router>();
-
-    // 会话层 — SessionData（需要 Router 地址）
-    auto sessionData = env.createEo<DPlane::session::SessionData>(router);
-
-    // 业务层 — AiChatBus（发 AiChatServiceReq 到 Gateway，不发 Adapter 直连）
+    // --- Business 层 ---
+    // C面
+    auto businessMgr = env.createEo<CPlane::BusinessMgr>(sessionMgr);
+    // D面
+    auto router = env.createEo<DPlane::business::Router>(businessMgr, sessionData);
     auto aiChatBus = env.createEo<DPlane::business::AiChatBus<TaskType::AiChat>>(
-        pool, serviceGateway, sessionData, model ? std::string(model) : std::string("default"));
+        pool, sessionData, businessMgr, router, model ? std::string(model) : std::string("default"));
 
-    // 接入层 — CliAdapter
-    auto cliAdapter = env.createEo<access::CliAdapter>(sessionMgr, sessionData);
+    // --- Service 层 ---
+    // C面
+    auto serviceMgr = env.createEo<DPlane::service::ServiceMgr>(businessMgr);
+    // D面
+    auto serviceGateway = env.createEo<DPlane::service::ServiceGateway>(serviceMgr, aiChatBus);
+    auto aiApiAdapter = env.createEo<DPlane::service::AiApiAdapter>(
+        apiUrl, apiKey, model ? model : "default", router, serviceMgr, serviceGateway);
 
-    // ===== 2. 注入地址依赖 =====
-    // Router: aiChatBusAddr
-    fw::anonSendTo(router, ModifyReq{aiChatBus});
-    // AiChatBus: routerAddr（用于 AiChatServiceReq.sourceAddress，ADR-0014）
-    fw::anonSendTo(aiChatBus, ModifyReq{router});
-
-    // ===== 3. 启动时建立会话 =====
-    std::cout << "[main] creating session...\n";
-    fw::anonSendTo(cliAdapter, SessionSetupReq{TaskType::AiChat});
-    // 等 SessionMgr 处理完
-    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    // ===== 2. 启动时建立会话 =====
+    // TODO: Step 8 集成 — 改为完整的 Register → Login → TaskCreate 流程
+    std::cout << "[main] session setup deferred to Step 8 integration\n";
 
     // ===== 4. 主循环 =====
     printBanner();
@@ -106,12 +102,12 @@ int main()
 
         if (line == "/exit")
         {
-            fw::anonSendTo(cliAdapter, SessionCloseReq{{{0}}});
+            // TODO: Step 8 — 改为 TaskDelete + Logout 流程
             break;
         }
 
         // 发送用户输入到 CliAdapter
-        fw::anonSendTo(cliAdapter, AiChatReq{{{0}, {}}, std::move(line)});
+        fw::anonSendTo(cliAdapter.myAddress(), AiChatBusinessReq{{{0}, {}}, std::move(line)});
 
         std::cout << "> " << std::flush;
     }

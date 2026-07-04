@@ -12,18 +12,22 @@ namespace CPlane
 class BusinessMgr : public fw::EoBase<BusinessMgr>
 {
   public:
-    explicit BusinessMgr(fw::EoConfig &cfg);
+    explicit BusinessMgr(fw::EoConfig &cfg, fw::EoAddress sessionMgrAddr);
 
-    // message handlers
-    void handle(const common::message::InternalPing &msg);
     void handle(const common::message::InternalPong &msg);
+    void handle(const common::message::TempConfig &msg);
 
   protected:
     void init() override
     {
-        onMsg<common::message::InternalPing>();
+        onMsg<common::message::TempConfig>();
         onMsg<common::message::InternalPong>();
     }
+
+  private:
+    fw::EoAddress sessionMgrAddr_;
+    fw::EoAddress routerAddr_;
+    fw::EoAddress serviceMgrAddr_;
 };
 
 } // namespace CPlane

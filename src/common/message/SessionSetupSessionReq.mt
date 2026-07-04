@@ -1,0 +1,2 @@
+message SessionSetupSessionReq
+    TaskType taskType

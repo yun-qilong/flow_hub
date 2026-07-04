@@ -63,6 +63,11 @@ class EoEnv
         sys_.await_all_actors_done();
     }
 
+    caf::actor_system &system()
+    {
+        return sys_;
+    }
+
   private:
     // 利用成员声明顺序确保 CAF 全局初始化在 actor_system 构造之前完成
     struct MetaInit

@@ -10,7 +10,21 @@ namespace DPlane::business
 using namespace fw;
 using namespace common::message;
 
-Router::Router(EoConfig &cfg) : EoBase<Router>(cfg) {}
+Router::Router(EoConfig &cfg, fw::EoAddress businessMgrAddr, fw::EoAddress sessionDataAddr)
+    : EoBase<Router>(cfg), businessMgrAddr_(std::move(businessMgrAddr))
+{
+    sendTo(businessMgrAddr_, common::message::TempConfig{5});
+    sendTo(sessionDataAddr, common::message::TempConfig{3});
+}
+
+void Router::handle(const common::message::TempConfig &msg)
+{
+    if (msg.tag == 6)
+    {
+        auto idx = static_cast<uint16_t>(common::TaskType::AiChat);
+        routeTable_.at(idx) = senderAddress();
+    }
+}
 
 void Router::handle(const RouterConfigReq &req)
 {

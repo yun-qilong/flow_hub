@@ -21,7 +21,8 @@ class AiApiAdapter : public fw::EoBase<AiApiAdapter>
 
   public:
     AiApiAdapter(fw::EoConfig &cfg, std::string apiBaseUrl, std::string apiKey,
-                 std::string defaultModel);
+                 std::string defaultModel, fw::EoAddress routerAddr, fw::EoAddress serviceMgrAddr,
+                 fw::EoAddress serviceGatewayAddr);
 
     void handle(const common::message::AiChatServiceReq &req);
 
@@ -37,6 +38,8 @@ class AiApiAdapter : public fw::EoBase<AiApiAdapter>
     std::string apiBaseUrl_;
     std::string apiKey_;
     std::string defaultModel_;
+    fw::EoAddress routerAddr_;
+    fw::EoAddress serviceMgrAddr_;
 };
 
 } // namespace DPlane::service

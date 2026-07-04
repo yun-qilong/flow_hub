@@ -18,11 +18,23 @@ static constexpr std::string_view SYSTEM_PROMPT =
     R"({"role":"system","content":"你是一个有帮助的AI助手。"},)";
 
 template <common::TaskType T>
-AiChatBus<T>::AiChatBus(fw::EoConfig &cfg, TaskPool &pool, fw::EoAddress gatewayAddr,
+AiChatBus<T>::AiChatBus(fw::EoConfig &cfg, TaskPool &pool, fw::EoAddress sessionDataAddr,
+                        fw::EoAddress businessMgrAddr, fw::EoAddress routerAddr,
                         std::string defaultModelName)
-    : fw::EoBase<AiChatBus<T>>(cfg), pool_(pool), gatewayAddr_(std::move(gatewayAddr)),
+    : fw::EoBase<AiChatBus<T>>(cfg), pool_(pool), sessionDataAddr_(std::move(sessionDataAddr)),
+      businessMgrAddr_(std::move(businessMgrAddr)), routerAddr_(std::move(routerAddr)),
       defaultModelName_(std::move(defaultModelName))
 {
+    this->sendTo(routerAddr_, common::message::TempConfig{6});
+}
+
+template <common::TaskType T>
+void AiChatBus<T>::handle(const common::message::TempConfig &msg)
+{
+    if (msg.tag == 9)
+    {
+        serviceGatewayAddr_ = this->senderAddress();
+    }
 }
 
 template <common::TaskType T>
@@ -60,28 +72,26 @@ void AiChatBus<T>::handle(const AiChatServiceResp &resp)
 template <common::TaskType T>
 void AiChatBus<T>::processServiceRequest(ContextType &ctx, const AiChatBusinessReq &req, GTID gtid)
 {
-    ctx.businessReplyAddr = req.head.sourceAddress;
-
     uint16_t seq = allocateAndRecordSeq(ctx);
     std::string body = buildMessagesJson(ctx, req.content);
     writeMessagesToContext(ctx, body);
 
-    sendAck(ctx, gtid, seq, req.content);
+    sendAck(gtid, seq, req.content);
 
     std::cout << "[AiChatBus] msg committed: seq=" << seq << " content=" << req.content
               << (ctx.pendingReqSeq != 0 ? " (preempting)" : "") << "\n";
 
     ctx.pendingReqSeq = seq;
 
-    if (not gatewayAddr_)
+    if (not serviceGatewayAddr_)
     {
-        std::cerr << "[AiChatBus] ERROR: gatewayAddr not set\n";
+        std::cerr << "[AiChatBus] ERROR: serviceGatewayAddr not set\n";
         return;
     }
 
     auto serviceReq = buildAiChatServiceReq(gtid, "[" + std::move(body) + "]", ctx, seq);
     std::cout << "[AiChatBus] sending AiChatServiceReq (reqSeq=" << seq << ") to gateway\n";
-    this->sendTo(gatewayAddr_, std::move(serviceReq));
+    this->sendTo(serviceGatewayAddr_, std::move(serviceReq));
 }
 
 template <common::TaskType T>
@@ -106,18 +116,15 @@ void AiChatBus<T>::processBusinessResp(ContextType &ctx, const AiChatServiceResp
         appendAssistantMsg(ctx, resp.content);
     }
 
-    if (not ctx.businessReplyAddr)
+    if (not sessionDataAddr_)
     {
-        std::cerr << "[AiChatBus] ERROR: businessReplyAddr not set\n";
+        std::cerr << "[AiChatBus] ERROR: sessionDataAddr not set\n";
         return;
     }
 
     ctx.pendingReqSeq = 0;
 
-    auto target = ctx.businessReplyAddr;
-    ctx.businessReplyAddr = {};
-
-    this->sendTo(target, AiChatBusinessResp{resp.head, resp.success, resp.content});
+    this->sendTo(sessionDataAddr_, AiChatBusinessResp{resp.head, resp.success, resp.content});
 }
 
 template <common::TaskType T>
@@ -140,14 +147,13 @@ uint16_t AiChatBus<T>::allocateAndRecordSeq(ContextType &ctx)
 }
 
 template <common::TaskType T>
-void AiChatBus<T>::sendAck(const ContextType &ctx, uint16_t gtid, uint16_t seq,
-                           const std::string &content)
+void AiChatBus<T>::sendAck(uint16_t gtid, uint16_t seq, const std::string &content)
 {
     AiChatMsgAck ack;
     ack.head.gtidList = {gtid};
     ack.seq = seq;
     ack.content = content;
-    this->sendTo(ctx.businessReplyAddr, std::move(ack));
+    this->sendTo(sessionDataAddr_, std::move(ack));
 }
 
 template <common::TaskType T>
@@ -187,7 +193,6 @@ AiChatServiceReq AiChatBus<T>::buildAiChatServiceReq(uint16_t gtid, std::string 
 
     AiChatServiceReq req;
     req.head.gtidList = {gtid};
-    req.head.sourceAddress = this->senderAddress();
     req.messagesJson = std::move(messagesJson);
     req.modelName = modelName.empty() ? defaultModelName_ : modelName;
     req.temperature = ctx.temperature > 0.0 ? ctx.temperature : 0.7;

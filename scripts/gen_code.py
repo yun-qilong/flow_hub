@@ -73,6 +73,9 @@ TYPE_MAP = {
     "vector": ("std::vector", "<vector>"),
 }
 
+# Types that need an extra CAF inspect header (in fw/) for serialization
+CAF_INSPECT_INCLUDES: dict[str, str] = {}
+
 # Matches: TypeName, TypeName<Args>, or TypeName[N]
 TYPE_NAME_RE = re.compile(r"^(\w+)(?:<([^>]+)>)?(?:\[(\d+)\])?$")
 
@@ -80,6 +83,23 @@ ARRAY_RE = re.compile(r"^(\w+)(?:<[^>]+>)?\[(\d+)\]$")
 
 # Set of enum type names (populated during parsing)
 ENUM_TYPES: set[str] = set()
+
+# Constant values extracted from Constants.hpp (name → integer value)
+CONSTANT_VALUES: dict[str, int] = {}
+
+
+def load_constants(constants_path: str) -> None:
+    """Parse Constants.hpp and populate CONSTANT_VALUES."""
+    path = ROOT / constants_path
+    if not path.exists():
+        return
+    with open(path) as f:
+        for line in f:
+            m = re.match(
+                r"^constexpr\s+\w+\s+(\w+)\s*=\s*(-?\d+)\s*;", line.strip()
+            )
+            if m:
+                CONSTANT_VALUES[m.group(1)] = int(m.group(2))
 
 # ---- category detection ------------------------------------------------
 # Maps context subdirectory name → GTID Category field value (ADR-0008)
@@ -106,6 +126,13 @@ def get_category_for_mt(filepath: Path, src_root: Path) -> int | None:
 
 
 # ---- include / define helpers ------------------------------------------
+
+def infer_namespace(include_path: str) -> str:
+    parts = include_path.rstrip("/").split("/")
+    if len(parts) > 1:
+        return parts[0]
+    return ""
+
 
 def parse_type_file(filepath: Path) -> tuple[dict[str, tuple[str, str]], list[dict]]:
     """Parse a type/ .mt file.
@@ -185,7 +212,98 @@ def parse_type_file(filepath: Path) -> tuple[dict[str, tuple[str, str]], list[di
     return defines, enums
 
 
-# ---- include resolution ------------------------------------------------
+# ---- structs.mt parsing -----------------------------------------------
+
+STRUCT_RE = re.compile(
+    r"^struct\s+(\w+)<([^>]+)>\s+from\s+\"([^\"]+)\"$"
+)
+
+TPARAM_RE = re.compile(r"^(?:(\w+)\s+)?(\w+)$")
+
+
+def parse_structs_file(filepath: Path) -> list[dict]:
+    """Parse structs.mt and return list of registered types.
+
+    Each entry: {name, tparams (list of (decl, is_type)), header}
+    """
+    structs: list[dict] = []
+    if not filepath.exists():
+        return structs
+    with open(filepath) as f:
+        for line in f:
+            stripped = line.strip()
+            if not stripped or stripped.startswith("#"):
+                continue
+            m = STRUCT_RE.match(stripped)
+            if m:
+                name = m.group(1)
+                tparams_raw = m.group(2)
+                header = m.group(3)
+                tparams: list[tuple[str, str, bool]] = []
+                for part in tparams_raw.split(","):
+                    part = part.strip()
+                    pm = TPARAM_RE.match(part)
+                    if pm:
+                        kind = pm.group(1) or "typename"
+                        pname = pm.group(2)
+                        is_type = (kind == "typename")
+                        tparams.append((kind, pname, is_type))
+                structs.append({
+                    "name": name,
+                    "tparams": tparams,
+                    "header": header,
+                })
+    return structs
+
+
+def generate_struct_caf_inspect(struct_def: dict, fw_dir: Path) -> None:
+    """Generate fw/<Name>Caf.hpp with CAF inspect for a registered struct."""
+    name = struct_def["name"]
+    tparams = struct_def["tparams"]  # list of (kind, name, is_type)
+
+    tparams_decl = ", ".join(f"{k} {n}" for k, n, _ in tparams)
+    tparams_use = ", ".join(n for _, n, _ in tparams)
+
+    caf_file = fw_dir / f"{name}Caf.hpp"
+    lines: list[str] = []
+    lines.append("// Auto-generated from structs.mt — DO NOT EDIT")
+    lines.append("")
+    lines.append("#pragma once")
+    lines.append("")
+    lines.append('#include "caf/all.hpp"')
+    lines.append("")
+    lines.append("namespace utils")
+    lines.append("{")
+    lines.append(f"template <{tparams_decl}>")
+    lines.append(f"class {name};")
+    lines.append("}")
+    lines.append("")
+    lines.append("namespace utils")
+    lines.append("{")
+    lines.append("")
+    lines.append(f"template <{tparams_decl}, class Inspector>")
+    lines.append(f"bool inspect(Inspector &f, {name}<{tparams_use}> &x)")
+    lines.append("{")
+    lines.append("    auto sz = x.size();")
+    lines.append("    if (not f.begin_sequence(sz))")
+    lines.append("    {")
+    lines.append("        return false;")
+    lines.append("    }")
+    lines.append("    for (size_t i = 0; i < sz; ++i)")
+    lines.append("    {")
+    lines.append("        if (not f.apply(x[i]))")
+    lines.append("        {")
+    lines.append("            return false;")
+    lines.append("        }")
+    lines.append("    }")
+    lines.append("    return f.end_sequence();")
+    lines.append("}")
+    lines.append("")
+    lines.append("} // namespace utils")
+    lines.append("")
+
+    caf_file.write_text("\n".join(lines))
+    print(f"  generated {caf_file}")
 
 def _discover_def_name(filepath: Path) -> tuple[str | None, str | None]:
     """Quick-scan a .mt file for its definition name and kind.
@@ -268,8 +386,15 @@ def parse_mt(filepath: Path, src_root: Path, mt_hpp_map: dict[str, str]) -> list
                 inc_m = re.match(r'^include\s+(.+)$', line)
                 if inc_m:
                     inc_raw = inc_m.group(1).strip()
-                    # 去掉可选引号
                     inc_rel = inc_raw.strip('"')
+
+                    if not inc_rel.endswith(".mt"):
+                        type_name = Path(inc_rel).stem
+                        ns = infer_namespace(inc_rel)
+                        cpp_type = f"{ns}::{type_name}" if ns else type_name
+                        TYPE_MAP[type_name] = (cpp_type, f'"{inc_rel}"')
+                        continue
+
                     # 路径以 context/ message/ type/ 开头 → 从 src/common/ 解析（共享定义）
                     # 否则 → 从当前 .mt 文件所在目录解析（同目录引用）
                     if inc_rel.startswith(("context/", "message/", "type/")):
@@ -456,10 +581,17 @@ def resolve_type_entry(mt_type_raw: str) -> tuple[str, str] | None:
 
     cpp_base, inc = entry
     if targs is not None:
-        # Template type: e.g. vector<uint16_t> → recursively resolve template arg
-        targ_entry = resolve_type_entry(targs)
-        targ_cpp = targ_entry[0] if targ_entry else targs
-        cpp = f"{cpp_base}<{targ_cpp}>"
+        arg_parts = [a.strip() for a in targs.split(",")]
+        resolved_args = []
+        for a in arg_parts:
+            if a.isdigit() or (a.startswith("-") and a[1:].isdigit()):
+                resolved_args.append(a)
+            elif a in CONSTANT_VALUES:
+                resolved_args.append(str(CONSTANT_VALUES[a]))
+            else:
+                targ_entry = resolve_type_entry(a)
+                resolved_args.append(targ_entry[0] if targ_entry else a)
+        cpp = f"{cpp_base}<{', '.join(resolved_args)}>"
     else:
         cpp = cpp_base
     return (cpp, inc)
@@ -482,18 +614,21 @@ def resolve_cpp_type(mt_type: str) -> str:
 def field_includes(fields: list, known_types: dict[str, str] | None = None) -> list[str]:
     """Collect #include lines needed by field types (standard types only)."""
     incs: set[str] = set()
+    caf_incs: set[str] = set()
     for ftype_raw, _ in fields:
         if ftype_raw == "__padding__":
             continue
         if ARRAY_RE.match(ftype_raw):
             incs.add("<array>")
-        # Resolve type to get include (supports template types like vector<uint16_t>)
         entry = resolve_type_entry(ftype_raw)
         if entry:
             inc = entry[1]
             if inc:
                 incs.add(inc)
-    return sorted(incs)
+        m = TYPE_NAME_RE.match(ftype_raw)
+        if m and m.group(1) in CAF_INSPECT_INCLUDES:
+            caf_incs.add(CAF_INSPECT_INCLUDES[m.group(1)])
+    return sorted(incs) + sorted(caf_incs)
 
 
 def _to_string_scalar(mt_type: str, access_expr: str,
@@ -507,6 +642,12 @@ def _to_string_scalar(mt_type: str, access_expr: str,
         return f"{access_expr}.to_string()"
     if mt_type in ENUM_TYPES:
         return f"to_string({access_expr})"
+    # .mt define 别名（如 EoAddress = actor）→ 查 TYPE_MAP 看 C++ 类型是否需要特殊 to_string
+    entry = TYPE_MAP.get(mt_type)
+    if entry is not None:
+        cpp_type = entry[0]
+        if cpp_type == "fw::EoAddress":
+            return f"std::to_string({access_expr}.id())"
     return f"std::to_string({access_expr})"
 
 
@@ -929,6 +1070,20 @@ def main() -> int:
     gen_root = src_root / "generated"
     gen_msg_dir = gen_root / "message"
     gen_ctx_dir = gen_root / "context"
+
+    load_constants("src/common/Constants.hpp")
+
+    # ---- Pass 0: parse structs.mt, register types, generate CAF inspect ---
+    structs_file = src_root / "common" / "structs.mt"
+    struct_defs = parse_structs_file(structs_file)
+    fw_dir = src_root / "fw"
+    for sdef in struct_defs:
+        generate_struct_caf_inspect(sdef, fw_dir)
+        name = sdef["name"]
+        header = sdef["header"]
+        TYPE_MAP[name] = (f"utils::{name}", f'"{header}"')
+        CAF_INSPECT_INCLUDES[name] = f'"fw/{name}Caf.hpp"'
+        print(f"  registered struct: {name} from {header}")
 
     # ---- Pass 1: build mt → hpp mapping (correct filenames) -----------
     mt_hpp_map = build_mt_hpp_map(src_root)

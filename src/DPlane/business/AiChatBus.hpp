@@ -36,16 +36,19 @@ class AiChatBus : public fw::EoBase<AiChatBus<T>>
     using ContextType = common::ContextTypeOf<T>;
 
     // pool: TaskPool 引用（Context 读写）
-    // gatewayAddr: ServiceGateway actor（发送 AiChatServiceReq 的目标）
-    explicit AiChatBus(fw::EoConfig &cfg, common::TaskPool &pool, fw::EoAddress gatewayAddr,
+    // sessionDataAddr: SessionData actor（回复 AiChatBusinessResp / AiChatMsgAck 的目标）
+    explicit AiChatBus(fw::EoConfig &cfg, common::TaskPool &pool, fw::EoAddress sessionDataAddr,
+                       fw::EoAddress businessMgrAddr, fw::EoAddress routerAddr,
                        std::string defaultModelName = "default");
 
     void handle(const common::message::AiChatBusinessReq &req);
     void handle(const common::message::AiChatServiceResp &resp);
+    void handle(const common::message::TempConfig &msg);
 
   protected:
     void init() override
     {
+        this->template onMsg<common::message::TempConfig>();
         this->template onMsg<common::message::AiChatBusinessReq>();
         this->template onMsg<common::message::AiChatServiceResp>();
     }
@@ -58,14 +61,17 @@ class AiChatBus : public fw::EoBase<AiChatBus<T>>
     std::string buildMessagesJson(const ContextType &ctx, const std::string &content) const;
     void writeMessagesToContext(ContextType &ctx, const std::string &body);
     uint16_t allocateAndRecordSeq(ContextType &ctx);
-    void sendAck(const ContextType &ctx, uint16_t gtid, uint16_t seq, const std::string &content);
+    void sendAck(uint16_t gtid, uint16_t seq, const std::string &content);
     common::message::AiChatServiceReq buildAiChatServiceReq(uint16_t gtid, std::string messagesJson,
                                                             const ContextType &ctx,
                                                             uint16_t reqSeq);
     void appendAssistantMsg(ContextType &ctx, const std::string &content);
 
     common::TaskPool &pool_;
-    fw::EoAddress gatewayAddr_;
+    fw::EoAddress sessionDataAddr_;
+    fw::EoAddress businessMgrAddr_;
+    fw::EoAddress routerAddr_;
+    fw::EoAddress serviceGatewayAddr_;
     std::string defaultModelName_;
 };
 

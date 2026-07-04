@@ -39,14 +39,14 @@ Flow Hub 是一个基于 Actor 模型的消息驱动嵌入式编排平台。它�
 | 组件/机制 | 状态 | 说明 |
 |----------|------|------|
 | CliAdapter | ✅ 已实现 | stdin/stdout ↔ 内部消息 |
-| SessionMgr | ✅ 已实现 | 基础 GTID 分配/回收 |
+| SessionMgr | ✅ 已实现 | 注册/登录/GTID 分配回收，username→userId 映射 |
 | SessionData | ✅ 已实现 | 基础消息转发 |
 | Router | ✅ 已实现 | GTID → TaskType 路由 |
 | AiChatBus | ✅ 已实现 | 单 AI 对话 |
 | BusinessMgr | ✅ 已实现 | 基础资源分配 |
 | ServiceGateway | ✅ 已实现 | 基础出向转发 |
 | AiApiAdapter | ✅ 已实现 | HTTP ↔ 内部消息翻译 |
-| AccessGateway | 📐 设计中 | 接入层分拣网关 |
+| AccessGateway | ✅ 已实现 | 接入层消息分拣 + fan-out |
 | ServiceMgr | 📐 设计中 | 设备注册表、fan-out 配置管理 |
 | WsAdapter | 📐 设计中 | WebSocket 接入 |
 | AutomationBus / DataManager | 📐 设计中 | 规则引擎、设备数据管理 |
@@ -54,7 +54,7 @@ Flow Hub 是一个基于 Actor 模型的消息驱动嵌入式编排平台。它�
 | SessionFlags 编译期标志 | 📐 设计中 | ADR-0021 |
 | BatchFanOut / FanOutMsg | 📐 设计中 | ADR-0022 |
 | 哨兵 GTID 新建 Task | 📐 设计中 | ADR-0023 |
-| 注册/登录/登出完整生命周期 | 📐 设计中 | 当前仅基础 SessionSetup/Close |
+| 注册/登录/登出完整生命周期 | � 进行中 | 注册+登录已实现（6.2~6.3），登出/注销待实现 |
 
 ---
 
@@ -136,6 +136,17 @@ MAX_UID = 65536（全 16 位空间）
 - **SessionMgr** 则不同——其 `UserRecord` 每项包含 `name[32]` + `static_vector<GTID, 128>`，若 flat 开 65536 项会浪费大量内存（~2 GB），不可接受。因此 SessionMgr 采用 `UserRecord[64][64]` 二维表，uid 解码为 `[userId][appType]` 后查表。
 
 uid 自携带 AppType（`uid & 0xFF`），无需额外字段或查表。同一真实用户在不同 AppType 下使用相同 username → 同一 userId（高 8 位同），不同 AppType（低 8 位不同）→ 不同 uid。fan-out 自动隔离。
+
+### 3.5.1 username 与 userId 设计原则
+
+**username 是 userId 级别的**——注册只建立 `username ↔ userId` 映射，与 appType 无关。注册成功后该 userId 自动获得所有 appType 的登录权限。各 appType 的 `UserRecord[userId][appType]` 在首次登录时 lazy 初始化。
+
+| 规则 | 说明 |
+|------|------|
+| **username 唯一性** | `usernameToId_`（`unordered_map<string, UserId>`）保证 username 全局唯一 |
+| **username 最长 12 字符** | `kMaxUsernameLen = 12`，超长注册直接拒绝。利于固定大小数据结构 |
+| **无反向索引** | 不维护 `userId → username` 映射。反向查找仅注销时用到，遍历 `usernameToId_`（≤64 项）即可，O(64) 可接受 |
+| **注册与 appType 解耦** | 注册只需 username，不需要 appType。`UserRegisterReq.head.appType` 仅用于拼装响应中的 `uid` |
 
 ### 3.6 内存模型
 

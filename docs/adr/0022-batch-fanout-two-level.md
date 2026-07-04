@@ -116,3 +116,34 @@ SessionData 和 Gateway 均不做排除。所有 adapter 收到 `FanOutMsg`。�
 - **Adapter**：新增 `FanOutMsg` 处理逻辑（查连接 + 区分送达/同步）。
 - **与 ADR-0013 的关系**：ADR-0013（Gateway 出向预埋 GTID 列表）仍适用于 Service 层下行 fan-out（传感器数据抄送 DataManager 等），不被取代。ADR-0022 是上行广播的独立机制。
 - **消息头字段**：`head.accessType` 不再被 Gateway 重写，保持原始值作为源标识。
+
+---
+
+## 修订记录
+
+| 日期 | 修订 |
+|------|------|
+| 2026-07-01 | 初稿，采纳 |
+| 2026-07-02 | 方案简化：废弃 `BatchFanOut` + `FanOutMsg` 两级消息，改为 `UserHead.targets` 单字段方案 |
+
+### 2026-07-02：废弃两级消息，改为 UserHead.targets
+
+**原方案**：SessionData 组装 `BatchFanOut{head, payload, targets}` → Gateway 拆解为 `FanOutMsg{head, payload}` → 逐 Adapter 发送。需新增两个消息类型。
+
+**简化后**：`UserHead` 增加 `uint64 targets` 字段（默认 0 = 不 fan-out）。SessionData 填入位图后原消息直传 Gateway，Gateway 遍历 targets 逐 Adapter 转发。零新消息类型。
+
+**简化理由**：
+1. `BatchFanOut` 和 `FanOutMsg` 的 payload 就是 BusinessEO 发出的原始消息体——包装再拆包是多余的
+2. CAF 消息系统不支持模板化消息类型，`BatchFanOut` 无法承载不同 payload 类型
+3. `targets` 位图描述的是"该用户当前在哪些 adapter 上"——与 `uid` 同为 User 维度信息，放在 `UserHead` 中语义合理
+4. SessionData 迭代发送 N 条消息（N = 活跃 adapter 数，通常 1~3），开销可接受
+
+**Gateway fan-out 实现**：私有模板 `fanOutToAdapters<Msg>(msg)` 统一处理——读 `head.targets`、清零、遍历置位 bit 查 `adapterTable_`、逐 adapter 拷贝发送。
+
+**Adapter 侧**：不再接收 `FanOutMsg` 统一类型，改为直接处理各业务消息类型（`AiChatMsgAck`、`AiChatBusinessResp` 等），按 `head.accessType` 区分源/同步。
+
+**原决策中仍然有效的部分**：
+- 源 Adapter 排除策略：Adapter 自判（`head.accessType == myAccessType`）
+- SessionData/Gateway 不做源排除，保持零决策
+- 边界情况处理（targets 为空、adapter 未注册、user 无连接）
+- `targets` 用 `uint64_t` 而非 `StaticBitMap`

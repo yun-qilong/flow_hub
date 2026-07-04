@@ -13,6 +13,7 @@ namespace fw
 {
 
 using EoAddress = caf::actor;
+using MessageHandler = caf::message_handler;
 using EoConfig = caf::actor_config;
 using EoSystemConfig = caf::actor_system_config;
 using EoDuration = caf::timespan;

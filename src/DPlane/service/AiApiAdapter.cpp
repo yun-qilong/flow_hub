@@ -12,10 +12,14 @@ namespace DPlane::service
 using namespace common::message;
 
 AiApiAdapter::AiApiAdapter(fw::EoConfig &cfg, std::string apiBaseUrl, std::string apiKey,
-                           std::string defaultModel)
+                           std::string defaultModel, fw::EoAddress routerAddr,
+                           fw::EoAddress serviceMgrAddr, fw::EoAddress serviceGatewayAddr)
     : fw::EoBase<AiApiAdapter>(cfg), apiBaseUrl_(std::move(apiBaseUrl)), apiKey_(std::move(apiKey)),
-      defaultModel_(std::move(defaultModel))
+      defaultModel_(std::move(defaultModel)), routerAddr_(std::move(routerAddr)),
+      serviceMgrAddr_(std::move(serviceMgrAddr))
 {
+    sendTo(serviceGatewayAddr, common::message::TempConfig{10});
+    sendTo(serviceMgrAddr_, common::message::TempConfig{11});
 }
 
 utils::HttpClient::Response AiApiAdapter::callApi(const AiChatServiceReq &req)
@@ -37,9 +41,7 @@ void AiApiAdapter::handle(const AiChatServiceReq &req)
     auto response = callApi(req);
 
     AiChatServiceResp resp;
-    auto serviceGatewayAddr = this->senderAddress();
     resp.head.gtidList = req.head.gtidList;
-    resp.head.sourceAddress = req.head.sourceAddress;
     resp.success = response.isSuccess();
     if (response.isSuccess())
     {
@@ -52,14 +54,13 @@ void AiApiAdapter::handle(const AiChatServiceReq &req)
 
     std::cout << "[AiApiAdapter] HTTP " << response.httpCode << "\n";
 
-    auto targetAddr = req.head.sourceAddress;
-    if (targetAddr)
+    if (routerAddr_)
     {
-        sendTo(targetAddr, std::move(resp));
+        sendTo(routerAddr_, std::move(resp));
     }
     else
     {
-        std::cerr << "[AiApiAdapter] WARNING: no sourceAddress in request, dropping response\n";
+        std::cerr << "[AiApiAdapter] WARNING: routerAddr not set, dropping response\n";
     }
 }
 

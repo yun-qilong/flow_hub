@@ -131,7 +131,7 @@ Round 9  跨切面      →  flag、超时、常量定稿
 ### 2.3 SessionMgr
 
 - [x] `usernameToId_` — `username → userId`（uint8_t，0~63）。
-- [x] `UserRecord[MAX_USERS][MAX_APP_TYPES]` — 64×64=4096 项二维表。每项：`char name[32]` + `static_vector<GTID, MAX_GTIDS_PER_USER>`。
+- [x] `UserRecord[MAX_USERS][MAX_APP_TYPES]` — 64×64=4096 项二维表。每项：`char name[32]`（从 `usernameToId_` 反查填充，用于日志/调试） + `static_vector<GTID, MAX_GTIDS_PER_USER>`。
 - [x] `uidBitset` — bitset\\<MAX_USERS\\>。分配新 userId 时找空闲位。AppType 维度由请求自带，不需分配。
 - [x] AppType 包含的 TaskType 集合 — `constexpr` 编译期常量。用于 `NewSessionReq` 闸门校验。
 
@@ -346,11 +346,11 @@ Business EO (AiChatBus) → SessionData → Gateway → Adapter → 前端
 - [x] **7.1.1 触发**：前端发 `RegisterReq{username}`。Adapter 编译期填入 `appType`（自身 AccessType 隐含），发往 Gateway → SessionMgr。
 
 - [x] **7.1.2 SessionMgr 处理**
-  - 检查 `username` 是否已在 `usernameToId_` 中注册（同一 username 同一 appType 不可重复注册）。
+  - 检查 `username` 是否已在 `usernameToId_` 中注册。
   - 从 `uidBitset` 中分配空闲 `userId`（uint8_t，0~63）。
-  - 初始化 `UserRecord[userId][appType]`：填入 `name`，GTID 列表为空。
   - `usernameToId_[username] = userId`。
   - 返回 `RegisterRsp{userId}` 给前端。
+  - **username 是 userId 级别的**：注册只建立 username↔userId 映射，与 appType 无关。注册成功后该 userId 自动获得所有 appType 的登录权限。各 appType 的 UserRecord 在首次登录时 lazy 初始化。
 
 - [x] **7.1.3 注册与登录分离**：注册只分配 userId，不建立连接状态。前端注册成功后需另行登录。
 
@@ -361,8 +361,9 @@ Business EO (AiChatBus) → SessionData → Gateway → Adapter → 前端
 - [x] **7.2.1 触发**：前端发 `LoginReq{userId}`。Adapter 编译期填入 `appType` + `accessType`（均编译期常量，AccessType 隐含 AppType），发往 Gateway → SessionMgr。
 
 - [x] **7.2.2 SessionMgr 处理**
-  - 校验 `userId` 和 `appType` 合法（`UserRecord[userId][appType]` 存在）。
-  - 从 `UserRecord` 取出该 (userId, appType) 的 GTID 列表。首次登录列表为空。
+  - 校验 `username` 已在 `usernameToId_` 中注册，获取 `userId`。
+  - 若 `UserRecord[userId][appType]` 尚未初始化（首次用该 appType 登录），视为空 GTID 列表。
+  - 否则从 `UserRecord` 取出该 (userId, appType) 的 GTID 列表。
   - 向 SessionData 发 `UserLogin{uid, appType, accessType, gtids}`。`uid = (userId << 8) | appType`。
   - **C/D 边界原则**：SessionMgr 把自身已知的关于该 uid 的全部信息（appType、accessType、gtids）一并通知 SessionData。这些信息 SessionData 怎么用是 D 面的事——要不要触发上下文同步、怎么处理 GTID 列表——控制面只负责通知到位，不做 D 面决策。
 
@@ -395,7 +396,7 @@ Business EO (AiChatBus) → SessionData → Gateway → Adapter → 前端
 
 > 路径：前端 → Adapter → Gateway → SessionMgr → (通知) → SessionData → (回复) → SessionMgr。
 
-- [x] **7.4.1 触发**：前端发 `LogoutReq{userId}`。Adapter 编译期填入 `appType` + `accessType`。Adapter **暂不**清除 `userToConn_[userId]`——等回路确认回来再清。
+- [x] **7.4.1 触发**：前端发 `UserLogoutReq`（`head.uid` 隐含 `userId`，无需重复携带）。Adapter 编译期填入 `head.appType` + `head.accessType`。Adapter **暂不**清除 `userToConn_[userId]`——等回路确认回来再清。
 
 - [x] **7.4.2 SessionMgr → SessionData**：发 `UserLogout{uid, accessType}`。
 
@@ -404,7 +405,12 @@ Business EO (AiChatBus) → SessionData → Gateway → Adapter → 前端
   - 统计该 `uid` 当前剩余活跃 adapter 数（`userAccessBitset[uid]` 中置位数）。
   - 回复 SessionMgr：含活跃 adapter 数。
 
-- [x] **7.4.4 SessionMgr 收尾**：据活跃 adapter 数决定后续（如为 0 则未来可触发 context 持久化——当前预留）。返回 `LogoutRsp` 给前端。Adapter 收到 `LogoutRsp` 后清除 `userToConn_[userId]`——形成完整回路。
+- [x] **7.4.4 SessionMgr 收尾**：据活跃 adapter 数决定后续（如为 0 则未来可触发 context 持久化——当前预留）。返回 `UserLogoutResp{success}` 给前端。
+
+- [x] **7.4.5 Adapter 收尾**：收到 `UserLogoutResp` 后：
+  - `userId = getUserId(head.uid)` → 通过 `userToConn_[userId]` 定位连接 → 推送 `UserLogoutResp` 给前端
+  - **然后**清除 `userToConn_[userId]` 和 `connToUser_[connectionId]`——形成完整回路
+  - 此前 `userToConn_` 仍有效，故 Req 中无需 `connectionId`
 
 ### 7.5 D7 注销 `[纯C面]`
 
@@ -440,7 +446,7 @@ Business EO (AiChatBus) → SessionData → Gateway → Adapter → 前端
 
 - [x] **8.1.1 捆绑请求**：前端发第一条消息时，消息中携带 `taskType`（新建哪种会话）及数据内容。Adapter 编译期填入 `appType` + `accessType`。不存在独立的 `NewSessionReq`。
 
-- [x] **8.1.2 协议约定——特殊 GTID 标识新 Task**：前端发捆绑请求时填入一个特殊 GTID 值——`taskType` 位如实填写（指示新建哪种会话），序列号位填全 1（`0xFFFF` 或等价哨兵值）。Gateway 据此将消息路由到 SessionMgr 而非 SessionData。SessionMgr 分配正式 GTID 后替换该哨兵值。这涉及 GTID 编码定义的更新（见 9.5.2）。
+- [x] **8.1.2 协议约定——`TaskCreateReq`/`TaskDeleteReq` 独立消息**（修订于 2026-07-03）：废弃原哨兵 GTID 捆绑请求方案。新建 Task 使用独立的 `TaskCreateReq`（携带 `taskType`）/ `TaskCreateResp`（携带正式 GTID）消息对；删除 Task 使用 `TaskDeleteReq`/`TaskDeleteResp`。Gateway 按消息类型直接路由 `TaskCreateReq`/`TaskDeleteReq` 到 SessionMgr，不检查 GTID 内容。详见 ADR-0023 修订记录。
 
 - [x] **8.1.3 SessionMgr 控制面处理**
   - 闸门校验：该 `appType` 包含的 TaskType 集合是否包含 `taskType`。不通过则拒绝。
@@ -646,11 +652,11 @@ Business EO (AiChatBus) → SessionData → Gateway → Adapter → 前端
 | 字段 | 类型 | 填入者 | 读取者 | 说明 |
 |------|------|--------|--------|------|
 | `uid` | uint16_t | Adapter（运行时 `userToConn_` 查 userId + 编译期 appType 拼装） | SessionMgr, SessionData, Gateway, Adapter | 全链路携带 |
-| `gtidList` | GTID 列表 | 前端（或 SessionMgr 分配后填入） | Router, BusinessEO, SessionData | 序列号全 1 = 新 Task 请求（见 8.1.2） |
+| `gtidList` | GTID 列表 | 前端（或 SessionMgr 分配后填入） | Router, BusinessEO, SessionData | `TaskCreateReq` 时为空，`TaskCreateResp` 携带正式 GTID；正常业务消息携带有效 GTID |
 | `accessType` | AccessType | Adapter（编译期常量） | Gateway, SessionMgr, SessionData, Adapter | Adapter 回程路由 + fan-out 位图索引 |
 | `appType` | AppType | Adapter（编译期常量，AccessType 隐含） | SessionMgr（闸门校验 + UserRecord 索引）, SessionData（上下文同步判断） | 控制面请求携带 |
 | `sessionFlags` | `SessionFlags` | Adapter（`make<AppType>()` 编译期构造） | BusinessEO（`isNeedAck()` 等查询） | 见 9.1 |
-- [x] **9.5.2 GTID 序列号全 1 = 新 Task 请求**：前端发捆绑请求时填入特殊 GTID——`taskType` 位如实填写，序列号位填全 1（哨兵值）。Gateway 据此路由到 SessionMgr。SessionMgr 分配正式 GTID 后替换。此为 GTID 编码层面的约定，需要更新 GTID 定义。
+- [x] **9.5.2 Task 生命周期消息**（修订于 2026-07-03）：废弃哨兵 GTID 方案。新建 Task 通过 `TaskCreateReq`（含 `taskType`，`gtidList` 为空）→ SessionMgr 分配 GTID → `TaskCreateResp`（`gtidList` 含正式 GTID）。删除 Task 通过 `TaskDeleteReq`（`gtidList` 含目标 GTID）→ SessionMgr 回收 → `TaskDeleteResp`。Gateway 按消息类型路由，不检查 GTID。详见 ADR-0023 修订记录。
 
 
 ### 9.n 本轮小结

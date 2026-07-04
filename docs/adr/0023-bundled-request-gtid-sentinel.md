@@ -84,3 +84,127 @@ BusinessEO 处理完毕后发 ACK → SessionData → `BatchFanOut` → 各 Adap
 - **SessionMgr**：新增捆绑请求处理流程——闸门校验 + 分配 GTID + 替换哨兵值 + 连同数据转发 SessionData。
 - **前端协议**：新建 Task 时填入哨兵 GTID，无需单独的建会话请求。收到 ACK 即确认会话创建成功。
 - **错误码**：新增 `NO_GTID_NEW_TASK`——前端未声明新 Task 又无正式 GTID。
+
+---
+
+## 修订记录
+
+| 日期 | 修订 |
+|------|------|
+| 2026-07-01 | 初稿，采纳 |
+| 2026-07-03 | 废弃捆绑请求方案，改为 TaskCreate + TaskDelete 对称协议 |
+
+### 2026-07-03：废弃捆绑请求，改为独立 TaskCreate/TaskDelete
+
+#### 问题根源
+
+捆绑请求的完整序列图：
+
+```mermaid
+sequenceDiagram
+    participant F as 前端
+    participant A as Adapter
+    participant G as Gateway
+    participant M as SessionMgr (C面)
+    participant D as SessionData (D面)
+    participant R as Router
+    participant B as AiChatBus (D面)
+
+    rect rgb(255, 200, 200)
+        Note over F,B: ❌ 捆绑请求
+
+        F->>A: "你好"
+        A->>G: AiChatBusinessReq {head(哨兵GTID), content="你好"}
+        G->>M: 检测哨兵 → 整条消息发往 C 面
+
+        Note over M: ⚠️ C面被迫处理数据消息体
+        M->>M: 读 content (不应感知)
+        M->>M: 分配GTID + 替换head
+
+        M->>D: AiChatBusinessReq {head(正式GTID), content="你好"}
+        D->>R: delegate
+        R->>B: delegate
+    end
+```
+
+核心缺陷：**SessionMgr 必须持有完整数据消息**，知道消息类型（`AiChatBusinessReq`）、结构体字段（`content`）。这违反了 C/D 分层——C 面职责是 GTID 管理，不应感知业务消息结构。未来每新增一种数据消息类型，SessionMgr 都需要修改。
+
+#### 被否决的修正方案
+
+**方案 A — Gateway 中介**
+Gateway 拆包只发 head 给 SessionMgr → 拿到 GTID → 填入原消息 → 转发 SessionData。
+否决理由：Gateway 本只是消息分拣器，不应承担 GTID 替换和消息体改写。
+
+**方案 B — Data 缓存 + 反请求**
+
+```mermaid
+sequenceDiagram
+
+    participant F as 前端
+    participant G as Gateway
+    participant M as SessionMgr
+    participant D as SessionData
+
+    rect rgb(255, 220, 200)
+        Note over F,D: ❌ Data 缓存方案
+
+        F->>G: 捆绑请求
+        G->>D: 直发 SessionData
+        D->>D: 暂存消息体 (需要设计缓存资源)
+        D->>M: 反请求 TaskCreate
+        M-->>D: Resp (GTID)
+        D->>D: 取出缓存消息 + 填入 GTID
+        D->>G: 继续转发
+    end
+```
+
+否决理由：
+1. SessionData 需设计缓存资源（存储不定数量待处理消息），改动大
+2. 异步等待引入消息乱序风险（等待 GTID 期间用户又发新消息）
+3. SessionMgr 无端多了反向依赖（Data → Mgr）
+
+#### 最终方案 — TaskCreate
+
+```mermaid
+sequenceDiagram
+    participant F as 前端
+    participant A as Adapter
+    participant G as Gateway
+    participant M as SessionMgr (C面)
+    participant D as SessionData (D面)
+    participant R as Router
+    participant B as AiChatBus (D面)
+
+    rect rgb(200, 255, 200)
+        Note over F,B: ✅ TaskCreate + 数据消息分离
+
+        Note over F,M: 第一步：申请 GTID（纯控制面）
+        F->>A: 点加号 → 新建会话
+        A->>G: TaskCreateReq
+        G->>M: 按消息类型分拣
+        M->>M: 闸门校验 + 分配GTID
+        M-->>G: TaskCreateResp {head(正式GTID)}
+        G-->>A: 回 Adapter
+        A-->>F: GTID 到手，输入框解冻
+
+        Note over F,B: 第二步：发送首条数据（纯数据面）
+        F->>A: "你好"
+        A->>G: AiChatBusinessReq {head(正式GTID), content="你好"}
+        G->>D: 正式 GTID → 数据面
+        D->>R: delegate
+        R->>B: delegate
+    end
+```
+
+**决策**：采用独立 TaskCreate/TaskDelete 对称协议。多一次往返的代价可接受——仅新建会话时发生，前端交互自然（加号 → 输入框解冻）。
+
+**哨兵 GTID 保留**：`TaskCreateReq` 中 `head.gtidList` 仍需填入哨兵值（序列号位全 1），此时尚无正式 GTID。仅作为 head 占位标识，不再承担"捆绑数据请求"语义。
+
+#### 影响
+
+| 项 | 旧（捆绑请求） | 新（TaskCreate） |
+|----|:---:|:---:|
+| 消息类型 | 复用业务消息 + 哨兵 GTID | 新增 `TaskCreateReq/Resp`、`TaskDeleteReq/Resp` |
+| SessionMgr 感知数据体 | ⚠️ 是 | ✅ 否 |
+| Gateway 哨兵检测 | ⚠️ 需检测 GTID 位 | ✅ 仅按消息类型分拣 |
+| 前端交互 | 发送即创建 | 加号创建 + 输入框解冻 |

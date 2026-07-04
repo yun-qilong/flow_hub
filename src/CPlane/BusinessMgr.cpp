@@ -10,11 +10,22 @@ namespace CPlane
 using namespace fw;
 using namespace common::message;
 
-BusinessMgr::BusinessMgr(EoConfig &cfg) : EoBase<BusinessMgr>(cfg) {}
-
-void BusinessMgr::handle(const InternalPing &msg)
+BusinessMgr::BusinessMgr(EoConfig &cfg, fw::EoAddress sessionMgrAddr)
+    : EoBase<BusinessMgr>(cfg), sessionMgrAddr_(std::move(sessionMgrAddr))
 {
-    std::cout << "[BusinessMgr] received InternalPing: " << msg.message << "\n";
+    sendTo(sessionMgrAddr_, common::message::TempConfig{4});
+}
+
+void BusinessMgr::handle(const common::message::TempConfig &msg)
+{
+    if (msg.tag == 5)
+    {
+        routerAddr_ = senderAddress();
+    }
+    else if (msg.tag == 7)
+    {
+        serviceMgrAddr_ = senderAddress();
+    }
 }
 
 void BusinessMgr::handle(const InternalPong &msg)

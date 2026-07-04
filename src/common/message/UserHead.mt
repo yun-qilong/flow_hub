@@ -1,7 +1,10 @@
 include type/types.mt
-include message/UserInfo.mt
+include common/SessionFlags.hpp
 
 struct UserHead
+    uint16 uid
     vector<GTID> gtidList
-    EoAddress sourceAddress
-    UserInfo userInfo
+    AccessType accessType
+    AppType appType
+    SessionFlags sessionFlags
+    uint64 targets

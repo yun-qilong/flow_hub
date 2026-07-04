@@ -103,6 +103,23 @@ struct UserHead
 
 ## 修订记录
 
+### 2026-07-02：废弃 `UserInfo` 结构体
+
+`UserInfo` 的三个字段随后续设计决策逐一移除，最终整个结构体被废弃：
+
+| 字段 | 废弃原因 | 依据 |
+|------|---------|------|
+| `clientId` | 单连接约束：同一 Adapter 内一 user 最多一个连接，无需 clientId 区分 | `access-session-design-checklist.md` Round 1 §1.6 |
+| `userId` | 编码进 `uid`（`uint16_t`，高 8 位 userId，低 8 位 appType） | `access-session-design-checklist.md` Round 1 §1.5 |
+| `accessType` | 提升为 `UserHead` 直接字段，承担回程路由 + fan-out 位图索引 + 源 Adapter 排除三重职责 | `access-session-design-checklist.md` Round 9 §9.5、ADR-0024 |
+
+`UserHead` 最终五字段（`uid`、`gtidList`、`accessType`、`appType`、`sessionFlags`）均为扁平字段，不再包含子结构。`UserInfo.mt` 及生成的 `UserInfo.hpp` 已删除。
+
+---
+
+## 修订记录
+
 | 日期 | 修订 |
 |------|------|
 | 2026-06-26 | 初稿，采纳 |
+| 2026-07-02 | 废弃 `UserInfo` 结构体，三字段逐一被后续设计替代（详见上文 §废弃 UserInfo 结构体） |

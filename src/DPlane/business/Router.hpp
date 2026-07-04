@@ -16,16 +16,19 @@ namespace DPlane::business
 class Router : public fw::EoBase<Router>
 {
   public:
-    explicit Router(fw::EoConfig &cfg);
+    explicit Router(fw::EoConfig &cfg, fw::EoAddress businessMgrAddr,
+                    fw::EoAddress sessionDataAddr);
 
     void handle(const common::message::RouterConfigReq &req);
     void handle(const common::message::RouterReconfigReq &req);
     void handle(common::message::AiChatBusinessReq req);
     void handle(common::message::AiChatServiceResp resp);
+    void handle(const common::message::TempConfig &msg);
 
   protected:
     void init() override
     {
+        onMsg<common::message::TempConfig>();
         onMsg<common::message::RouterConfigReq>();
         onMsg<common::message::RouterReconfigReq>();
         onMsg<common::message::AiChatBusinessReq>();
@@ -35,6 +38,7 @@ class Router : public fw::EoBase<Router>
   private:
     static constexpr uint16_t kRouteTableSize = 1024;
     std::array<fw::EoAddress, kRouteTableSize> routeTable_{};
+    fw::EoAddress businessMgrAddr_;
 
     fw::EoAddress getTargetEoAddress(uint16_t gtid) const
     {

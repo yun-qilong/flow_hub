@@ -41,3 +41,15 @@
 - [ ] context 持久化/加载（登出归零存盘、登录冷启加载——当前预留）
 - [ ] 消息进静态内存池
 - [ ] BatchCounter 超时机制的定时器方案
+
+---
+
+## 当前实现待办
+
+> 2026-07-03，路线图 Step 2 完成后记录。
+
+- [ ] **gen_code.py 支持 `optional` 字段语法**：`.mt` 中 `optional<T>` → 生成 `std::optional<T>`。当前用空 `vector` 代表"无"（如 `UserLoginResp.gtids`），`optional` 语义更清晰。
+  - 涉及：路线图 2.10（已搁置）
+- [ ] **消息体系文档**：需要一篇独立文档介绍所有 34 个消息类型——各自的作用、字段含义、在完整流程中的位置、带 mermaid 序列图的消息流转全景。
+  - 建议位置：`docs/architecture/message-catalog.md`
+  - 包含：C 面消息（Register/Login/Logout/Delete ×4 组）、C→D 通知（Session ×4 组）、Task 生命周期（Create/Delete/Sync）、数据面消息（AiChat 系列）、fan-out 机制（UserHead.targets）

@@ -14,18 +14,21 @@ namespace DPlane::service
 class ServiceGateway : public fw::EoBase<ServiceGateway>
 {
   public:
-    explicit ServiceGateway(fw::EoConfig &cfg, fw::EoAddress adapterAddr);
+    explicit ServiceGateway(fw::EoConfig &cfg, fw::EoAddress serviceMgrAddr,
+                            fw::EoAddress aiChatBusAddr);
 
     void handle(common::message::AiChatServiceReq req);
+    void handle(const common::message::TempConfig &msg);
 
   protected:
     void init() override
     {
+        onMsg<common::message::TempConfig>();
         onMsg<common::message::AiChatServiceReq>();
     }
 
   private:
-    fw::EoAddress aiApiAdapter_; // AiApiAdapter
+    fw::EoAddress aiApiAdapter_;
 };
 
 } // namespace DPlane::service
