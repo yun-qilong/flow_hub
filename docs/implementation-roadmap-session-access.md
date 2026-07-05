@@ -14,9 +14,9 @@ Step 2   消息定义      →  脚本适配、UserHead 重构、文档修订、
 Step 3   工具类        →  BatchCounter 封装 ✅
 Step 4   AccessAdapter  →  scoped_actor、userToConn_/connToUser_、编译期常量、消息头填入、fan-out 处理
 Step 5   AccessGateway  →  新建 Gateway EO、adapterTable_、消息分拣、fanOutToAdapters 模板
-Step 6   SessionMgr    →  usernameToId_、UserRecord、uidBitset、注册/登录/登出/注销、TaskCreate/Delete、Demo 自动登录
-Step 7   SessionData   →  userAccessBitset、透传模式、C→D 通知处理、targets 填入转发、上下文同步
-Step 8   集成与清理    →  更新 main.cpp 接线、适配 Business 层、清理 sourceAddress ✅、端到端验证
+Step 6   SessionMgr    →  usernameToId_、UserRecord、uidBitset、注册/登录/登出/注销、TaskCreate/Delete、CLI Demo 交互 ✅
+Step 7   SessionData   →  userAccessBitset、透传模式、C→D 通知、上行 targets 填入 ✅（上下文同步 demo 跳过）
+Step 8   集成与清理    →  更新 main.cpp 接线、适配 Business 层、清理 sourceAddress ✅、端到端验证 ✅
 Step 9   单元测试      →  覆盖核心路径和边界
 Step 10  系统组装      →  main 函数结构、组件实例化位置、消息驱动 setup 流程、替换 TempConfig 临时方案
 ```
@@ -322,7 +322,7 @@ Step 10  系统组装      →  main 函数结构、组件实例化位置、消�
 - [x] ~~**6.6 实现 `UserReset` 发送**~~ → 已并入 6.2
   - 注册成功后直接发 `UserRegisterSessionReq` 给 SessionData 清零该 userId 所有 appType 的 bitset，无需独立的 UserReset 机制
 
-- [ ] **6.7 实现 TaskCreate 处理**
+- [x] **6.7 实现 TaskCreate 处理**
   - 文档出处：ADR-0023（修订后）
   - 处理 `TaskCreateReq`：
     1. 闸门校验：该 `appType` 是否包含请求的 `taskType`
@@ -332,7 +332,7 @@ Step 10  系统组装      →  main 函数结构、组件实例化位置、消�
   - 不再需要"连同原始数据转发"——数据消息前端拿到 GTID 后单独发送
   - 依赖：6.1
 
-- [ ] **6.8 实现 TaskDelete 处理**
+- [x] **6.8 实现 TaskDelete 处理**
   - 文档出处：ADR-0023（修订后）
   - 处理 `TaskDeleteReq`：
     1. 校验 `gtid` 属于该 (userId, appType)
@@ -341,20 +341,21 @@ Step 10  系统组装      →  main 函数结构、组件实例化位置、消�
     4. 返回 `TaskDeleteResp{success}`
   - 依赖：6.1、2.8.2
 
-- [ ] **6.9 移除旧的 `SessionSetupSessionReq` / `SessionCloseSessionReq` 处理**
+- [x] **6.9 移除旧的 `SessionSetupSessionReq` / `SessionCloseSessionReq` 处理**
   - 旧 `SessionSetupSessionReq` → 被 `TaskCreateReq` 替代（6.7）
   - 旧 `SessionCloseSessionReq` → 被 `TaskDeleteReq` 替代（6.8）
   - 从 `init()` 中移除对应 `onMsg`，删除旧 handler
   - ⚠️ 依赖 6.1~6.8 先完成（新 handler 实现后旧 handler 才能删，否则临时 main.cpp 无法编译）
   - 依赖：6.7、6.8
 
-- [ ] **6.10 Demo 模式：首次捆绑请求自动注册 + 登录**
-  - 背景：当前 CLI 演示没有前端注册/登录界面，需要 SessionMgr 在收到首个捆绑请求时自动创建用户身份
-  - 逻辑：收到捆绑请求 → 从 `UserHead` 读取 `userId`（0 表示新用户）、`appType`
-    - 若 `userId == 0` 或未注册 → 自动分配 userId、初始化 UserRecord（等同于 D0 注册）
-    - 自动完成登录：置 `uidBitset_`、向 SessionData 发 `UserLogin` 通知
-  - 完成标准：CLI 启动后首次发消息能自动获得 userId + GTID，无需手动注册/登录
-  - 依赖：6.7、6.2、6.3
+- [x] **6.10 CLI Demo 交互流程**
+  - 路径：显式 `/register <name>` → `/login <name>` → 登录后自动 `TaskCreate` → 用户输入文本进入对话
+  - 注册：建立 username↔userId 映射（userId 级别，不绑定 appType）
+  - 登录：校验 userId → 向 SessionData 发 `UserLoginSessionReq` → 成功后自动发送 `TaskCreateReq` 建 Task
+  - 两个行为（登录响应 + Task 创建响应）串行完成后才释放输入锁，允许用户继续操作
+  - `/new` 命令：已登录时可用，新建 Task 并切换当前 GTID
+  - `/help` 按当前状态标注可用命令（未登录标 `/register` `/login` `/delete`，已登录标 `/logout` `/new`）
+  - 依赖：6.2、6.3、6.7
 
 ---
 
@@ -362,7 +363,7 @@ Step 10  系统组装      →  main 函数结构、组件实例化位置、消�
 
 > 当前 `SessionData` 仅做简单转发 + `sourceAddress` 回传。需完整实现文档定义的透传模式、C→D 通知处理、fan-out 机制。
 
-- [ ] **7.1 实现 `userAccessBitset`**
+- [x] **7.1 实现 `userAccessBitset`**
   - 文档出处：checklist Round 2 §2.4
   - 文件：`src/DPlane/session/SessionData.hpp`（修改）
   - 新增成员：`std::array<uint64_t, kMaxUid> userAccessBitset_` — 65536 × 8 字节 = 512 KB
@@ -370,35 +371,28 @@ Step 10  系统组装      →  main 函数结构、组件实例化位置、消�
   - 完成标准：编译通过
   - 依赖：1.4（`kMaxUid`）、1.1（AccessType）
 
-- [ ] **7.2 实现 `batchCounterResources_`**
+- [ ] **7.2 实现 `batchCounterResources_`**（demo 阶段跳过）
   - 文档出处：checklist Round 2 §2.4、Round 9 §9.2
   - 新增成员：`BatchCounter batchCounter_`（封装 `std::array<Counter, kMaxBatchCounterNum>`）
-  - 完成标准：编译通过
-  - 依赖：3.1（BatchCounter）
+  - 用途：上下文同步（7.4）、批量 fan-out 消息计数
+  - 当前单 Adapter demo 无需此机制，待多 Adapter 场景时实现
 
-- [ ] **7.3 实现透传模式**
+- [x] **7.3 实现透传模式**
   - 文档出处：checklist Round 3 §3.1、Round 4 §4.2（SessionData）
-  - 收到带正式 GTID 的数据面请求（如 `AiChatBusinessReq`）→ `delegateTo(routerAddr_, msg)`，零拷贝转发
+  - 收到带正式 GTID 的数据面请求（如 `AiChatBusinessReq`）→ 按值接收 + `std::move` 零拷贝转发至 Router
   - **不查** `userAccessBitset`，**不做** fan-out
   - 完成标准：编译通过
   - 依赖：7.1
 
-- [ ] **7.4 实现 `UserLogin` 处理**
+- [x] **7.4 实现 `UserLogin` 处理**（基础部分）
   - 文档出处：checklist Round 3 §3.2、Round 7 §7.2.3
-  - 逻辑：
-    1. `setBit(uid, accessType)`
-    2. 判断是否需要上下文同步：`appType` 为 AiChat 类 **且** `gtids` 非空
-    3. 若触发同步：`batchCounter_.allocate(gtids.size())` → 组装批量消息（每条携带 `batchIndex`）→ 发往 `routerAddr_`
-    4. 回复 SessionMgr：含该 `uid` 当前活跃 adapter 数（`popcount(userAccessBitset_[uid])`）
-  - 完成标准：编译通过
-  - 依赖：7.1、7.2、7.3
+  - `setBit(uid, accessType)` + 回复 SessionMgr（`needWaitForData=false`）
+  - 上下文同步（gtids 非空 → batch counter → 批量消息 → Router）依赖 7.2，demo 阶段跳过
+  - 依赖：7.1
 
-- [ ] **7.5 实现 `UserLogout` 处理**
+- [x] **7.5 实现 `UserLogout` 处理**
   - 文档出处：checklist Round 3 §3.2、Round 7 §7.4.3
-  - 逻辑：
-    1. `clearBit(uid, accessType)`
-    2. 统计活跃 adapter 数
-    3. 回复 SessionMgr
+  - `clearBit(uid, accessType)` + `countActiveAdapters` + 回复 SessionMgr
   - 完成标准：编译通过
   - 依赖：7.1
 
@@ -408,25 +402,22 @@ Step 10  系统组装      →  main 函数结构、组件实例化位置、消�
   - 无需回复（fire-and-forget）
   - 注：原独立 UserReset 消息已废弃，改为注册时顺带发送
 
-- [ ] **7.7 实现上行消息 fan-out（`targets` 填入）**
+- [x] **7.7 实现上行消息 fan-out（`targets` 填入）**
   - 文档出处：checklist Round 5 §5.2~5.3
-  - 收到 ACK 或 AI 回复（来自 Business EO）：
-    1. 读 `uid` → `targets = userAccessBitset_[uid]`（原样拷贝）
-    2. 若 `targets == 0` → 打 log，不发送
-    3. `msg.head.targets = targets` → 直接转发给 Gateway
+  - `AiChatBusinessResp` 和 `AiChatMsgAck` 转发前：`msg.head.targets = userAccessBitset_[uid]`
+  - `TaskDeleteSessionReq` 同样填 targets → `TaskSync` 发往 Gateway
+  - Gateway 根据 targets 做 fan-out（当前单 Adapter 时 targets 仅含一位，等价直发）
   - 完成标准：编译通过
-  - 依赖：7.1、2.5（UserHead 含 targets）
+  - 依赖：7.1
 
-- [ ] **7.8 实现 `DeleteSession` fan-out 处理**
+- [x] **7.8 实现 `DeleteSession` fan-out 处理**
   - 文档出处：checklist Round 8 §8.2.3
-  - 收到 SessionMgr 的删除会话通知 → 填 `head.targets` → 转发给 Gateway（Gateway 做 fan-out）
+  - `TaskDeleteSessionReq` handler 填 `head.targets` → 发 `TaskSync` 给 Gateway → Gateway 做 fan-out
   - 完成标准：编译通过
   - 依赖：7.7
 
-- [ ] **7.9 移除旧的 `replyToAddr_` 逻辑**
-  - 删除 `replyToAddr_` 成员变量
-  - `handle(AiChatBusinessResp)` 改为走 fan-out 路径（6.7）而非直接 `sendTo(replyToAddr_)`
-  - 完成标准：编译通过，上行路径经 SessionData→Gateway→Adapter
+- [x] **7.9 移除旧的 `replyToAddr_` 逻辑**
+  - 当前代码已无 `replyToAddr_`，上行路径统一经 SessionData → Gateway → Adapter
   - 依赖：6.7
 
 ---
@@ -457,63 +448,33 @@ Step 10  系统组装      →  main 函数结构、组件实例化位置、消�
 
 ### Step 8 — 集成与清理
 
-- [ ] **8.1 更新 `main.cpp` 接线**
+- [x] **8.1 更新 `main.cpp` 接线**（TempConfig 阶段）
   - 文件：`src/main.cpp`（修改）
-  - 变更：
-    1. 创建 `AccessGateway` 实例，传入 `sessionMgrAddr`、`sessionDataAddr`
-    2. `SessionMgr` 构造函数增加 `sessionDataAddr_`（用于发 C→D 通知：UserLogin/Logout/Reset）
-    3. `SessionData` 构造函数增加 `gatewayAddr_`（用于上行消息经 Gateway fan-out）
-    4. `CliAdapter` 构造函数改为接收 `gatewayAddr`（不再直接持有 SessionMgr/SessionData 地址）
-    5. `AiChatBus` 构造函数增加 `sessionDataAddr_`（用于上行发 ACK/回复到 SessionData，而非 sourceAddress 直连 Adapter）
-    6. CliAdapter 启动时向 Gateway 注册（发 AdapterRegister 消息）
-    7. 删除 `SessionSetupSessionReq` 的启动触发（改为首次消息自动触发捆绑请求）
-  - **地址注入汇总**：
-    | EO | 需要的新地址 | 用途 |
-    |----|-------------|------|
-    | AccessGateway | sessionMgr, sessionData | 消息分拣目标 |
-    | SessionMgr | sessionData | C→D 通知 |
-    | SessionData | gateway | 上行消息 fan-out（填 targets 后转发） |
-    | CliAdapter | gateway | 统一入口 |
-    | AiChatBus | sessionData | ACK/回复上行 |
-  - 完成标准：编译通过
+  - 地址注入通过 TempConfig 消息交换完成（正式消息驱动 Setup 见 Step 10）：
+    | EO | 获得地址 | 方式 |
+    |----|---------|------|
+    | AccessGateway | sessionMgr, sessionData | 对方构造时发 `TempConfig{1}`/`{2}` |
+    | SessionMgr | sessionData | 构造函数参数 |
+    | SessionData | gateway | 构造函数参数 |
+    | CliAdapter | gateway | AccessGateway 构造时发 `TempConfig{0}` |
+    | AiChatBus | sessionData | 构造函数参数 |
+  - 已删除 `SessionSetupSessionReq`（6.9）
+  - 完成标准：编译通过 ✅
   - 依赖：5.1、6.1、7.1、4.1
 
-- [ ] **8.2 适配 Business 层（最小修改）**
+- [x] **8.2 适配 Business 层（最小修改）**
   - 文档出处：ADR-0024（移除 `sourceAddress`）
-  - 文件：`src/DPlane/business/AiChatBus.hpp` / `.cpp`（修改）
-  - 变更：
-    1. 构造函数增加 `sessionDataAddr_` 参数（用于上行发送 ACK/回复）
-    2. `processServiceRequest` 中不再从 `req.head.sourceAddress` 取回复地址
-    3. 改为 `sendTo(sessionDataAddr_, ack)` 和 `sendTo(sessionDataAddr_, resp)`
-    4. 读取 `req.head.sessionFlags.isNeedAck()` 决定是否发 ACK
-  - 完成标准：编译通过
-  - 依赖：2.5（UserHead 新字段）、7.7（SessionData 填入 targets）
+  - AiChatBus 已有 `sessionDataAddr_`，ACK/回复经 SessionData 上行 ✅
+  - `sourceAddress` 已移除 ✅
+  - `sessionFlags.isNeedAck()` 当前无条件发 ACK，按需后续细化 ⚠️
+  - 完成标准：编译通过 ✅
 
-- [x] **8.3 移除 `sourceAddress` 残留引用**
-  - 扫描范围：`src/` 下所有 `.cpp`/`.hpp` 文件
-  - 已移除 DPlane 三层（SessionData/AiChatBus/AiApiAdapter）中所有 `sourceAddress` 读写
-  - 各 EO 改用 `senderAddress()` 获取回复目标地址
-  - `MsgHead` 如仍存在且被引用，同步清理
-  - 完成标准：全量编译零错误
-  - 依赖：8.1、8.2
+- [x] **8.3 移除 `sourceAddress` 残留引用** ✅
 
-- [ ] **8.4 验证全量编译**
-  - 执行 `cmake --build build/`
-  - 完成标准：零错误零警告
-  - 依赖：8.1~8.3
+- [x] **8.4 验证全量编译** ✅
 
-- [ ] **8.5 端到端 AiChat 功能验证**
-  - 启动 flowhub，输入一行对话
-  - 验证完整链路：`stdin → CliAdapter → Gateway → SessionData → Router → AiChatBus → ServiceGateway → AiApiAdapter → HTTP API → 回复经原路返回`
-  - 关键检查点：
-    - CliAdapter 正确填入 UserHead 五字段
-    - Gateway 正确按消息类型分拣（控制面消息 → SessionMgr，数据面消息 → SessionData，fan-out 消息 → Adapter）
-    - SessionMgr 自动注册+登录+分配 GTID
-    - SessionData 透传下行、填 targets 上行 fan-out
-    - AiChatBus 读 sessionFlags.isNeedAck()、发送 ACK 到 SessionData
-    - CliAdapter 收到上行消息并正确显示
-  - 完成标准：完整一轮对话成功，输出符合预期
-  - 依赖：8.4
+- [x] **8.5 端到端 AiChat 功能验证** ✅
+  - 完整链路验证通过：注册 → 登录 → 建 Task → 对话 → AI 回复 → 显示
 
 ---
 
@@ -606,7 +567,7 @@ graph TD
         E7[6.7 TaskCreate]
         E8[6.8 TaskDelete]
         E9[6.9 移除旧代码]
-        E10[6.10 Demo 自动登录]
+        E10[6.10 CLI Demo 交互]
     end
 
     subgraph Step7[Step 7: SessionData]
@@ -716,3 +677,4 @@ graph TD
 - [ ] **10.4 Gateway adapterTable_ 注册流程**：Adapter 如何向 Gateway 注册（正式替代当前的构造传址+TempConfig）
 - [ ] **10.5 SessionMgr ↔ SessionData 地址交换**：双向注入改用消息驱动
 - [ ] **10.6 移除临时方案**：删除 `TempConfig` 消息类型、所有 EO 中的 `TempConfig` handler、构造函数中的临时地址传递
+- [ ] **10.7 AccessAdapter 自适应轮询**（ADR-0027）：idle > 30s 时将 `readFrontend` 的 poll 超时从 100ms 切换为 1s，降低 idle CPU 占用。不改邮箱间隔。后期通过配置文件调整，当前硬编码。

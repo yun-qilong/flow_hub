@@ -76,7 +76,7 @@ void AiChatBus<T>::processServiceRequest(ContextType &ctx, const AiChatBusinessR
     std::string body = buildMessagesJson(ctx, req.content);
     writeMessagesToContext(ctx, body);
 
-    sendAck(gtid, seq, req.content);
+    sendAck(req.head, gtid, seq, req.content);
 
     std::cout << "[AiChatBus] msg committed: seq=" << seq << " content=" << req.content
               << (ctx.pendingReqSeq != 0 ? " (preempting)" : "") << "\n";
@@ -131,26 +131,29 @@ template <common::TaskType T>
 uint16_t AiChatBus<T>::allocateAndRecordSeq(ContextType &ctx)
 {
     int oldLen = ctx.messagesLen;
-    uint16_t seq = ctx.messageCount;
     ctx.messageCount++;
+    uint16_t seq = ctx.messageCount;
 
-    if (seq == 0)
+    if (seq == 1)
     {
-        ctx.messageOffsets.at(seq) = static_cast<uint16_t>(SYSTEM_PROMPT.size());
+        ctx.messageOffsets.at(0) = static_cast<uint16_t>(SYSTEM_PROMPT.size());
     }
     else
     {
-        ctx.messageOffsets.at(seq) = static_cast<uint16_t>(oldLen + 1);
+        ctx.messageOffsets.at(seq - 1) = static_cast<uint16_t>(oldLen + 1);
     }
 
     return seq;
 }
 
 template <common::TaskType T>
-void AiChatBus<T>::sendAck(uint16_t gtid, uint16_t seq, const std::string &content)
+void AiChatBus<T>::sendAck(const UserHead &reqHead, uint16_t gtid, uint16_t seq,
+                           const std::string &content)
 {
     AiChatMsgAck ack;
+    ack.head = reqHead;
     ack.head.gtidList = {gtid};
+    ack.head.targets = 0;
     ack.seq = seq;
     ack.content = content;
     this->sendTo(sessionDataAddr_, std::move(ack));

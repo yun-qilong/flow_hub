@@ -28,6 +28,10 @@
 - [ ] 会话生命周期（§6.4）各流程目前为 ASCII 路径图，可转为 mermaid 序列图
 - [ ] 上行 fan-out 路径（BatchFanOut → Gateway → FanOutMsg → Adapter）可独立绘制一幅序列图
 
+## 待实现（demo 阶段跳过）
+
+- [ ] **SessionData `batchCounterResources_`（路线图 7.2）**：上下文同步机制。`UserLogin` 时若 gtids 非空，通过 BatchCounter 组装批量消息发往 Router。当前单 Adapter demo 不需要，多 Adapter 场景时实现。
+
 ## 待补充的 Business/Service 层细节
 
 - [ ] BusinessMgr 的资源分配策略

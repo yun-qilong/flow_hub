@@ -42,6 +42,7 @@ void AiApiAdapter::handle(const AiChatServiceReq &req)
 
     AiChatServiceResp resp;
     resp.head.gtidList = req.head.gtidList;
+    resp.reqSeq = req.reqSeq;
     resp.success = response.isSuccess();
     if (response.isSuccess())
     {

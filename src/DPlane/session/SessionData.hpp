@@ -19,8 +19,9 @@ class SessionData : public fw::EoBase<SessionData>
   public:
     explicit SessionData(fw::EoConfig &cfg, fw::EoAddress accessGatewayAddr);
 
-    void handle(const common::message::AiChatBusinessReq &req);
-    void handle(const common::message::AiChatBusinessResp &resp);
+    void handle(common::message::AiChatBusinessReq req);
+    void handle(common::message::AiChatBusinessResp resp);
+    void handle(common::message::AiChatMsgAck ack);
     void handle(const common::message::UserLoginSessionReq &req);
     void handle(const common::message::UserLogoutSessionReq &req);
     void handle(const common::message::UserRegisterSessionReq &req);
@@ -33,6 +34,7 @@ class SessionData : public fw::EoBase<SessionData>
         onMsg<common::message::TempConfig>();
         onMsg<common::message::AiChatBusinessReq>();
         onMsg<common::message::AiChatBusinessResp>();
+        onMsg<common::message::AiChatMsgAck>();
         onMsg<common::message::UserLoginSessionReq>();
         onMsg<common::message::UserLogoutSessionReq>();
         onMsg<common::message::UserRegisterSessionReq>();

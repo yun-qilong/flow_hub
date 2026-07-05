@@ -73,7 +73,8 @@ int main()
     // D面
     auto router = env.createEo<DPlane::business::Router>(businessMgr, sessionData);
     auto aiChatBus = env.createEo<DPlane::business::AiChatBus<TaskType::AiChat>>(
-        pool, sessionData, businessMgr, router, model ? std::string(model) : std::string("default"));
+        pool, sessionData, businessMgr, router,
+        model ? std::string(model) : std::string("default"));
 
     // --- Service 层 ---
     // C面
@@ -83,34 +84,10 @@ int main()
     auto aiApiAdapter = env.createEo<DPlane::service::AiApiAdapter>(
         apiUrl, apiKey, model ? model : "default", router, serviceMgr, serviceGateway);
 
-    // ===== 2. 启动时建立会话 =====
-    // TODO: Step 8 集成 — 改为完整的 Register → Login → TaskCreate 流程
-    std::cout << "[main] session setup deferred to Step 8 integration\n";
-
-    // ===== 4. 主循环 =====
+    // ===== 2. 启动 CLI 前端 =====
     printBanner();
-    std::cout << "> " << std::flush;
-
-    std::string line;
-    while (std::getline(std::cin, line))
-    {
-        if (line.empty())
-        {
-            std::cout << "> " << std::flush;
-            continue;
-        }
-
-        if (line == "/exit")
-        {
-            // TODO: Step 8 — 改为 TaskDelete + Logout 流程
-            break;
-        }
-
-        // 发送用户输入到 CliAdapter
-        fw::anonSendTo(cliAdapter.myAddress(), AiChatBusinessReq{{{0}, {}}, std::move(line)});
-
-        std::cout << "> " << std::flush;
-    }
+    cliAdapter.showPrompt();
+    cliAdapter.run();
 
     std::cout << "\n[main] goodbye.\n";
     return 0;

@@ -5,6 +5,8 @@
 #include "generated/type/AccessType.hpp"
 #include "generated/type/AppType.hpp"
 
+#include <string>
+
 namespace access
 {
 
@@ -41,8 +43,38 @@ class CliAdapter : public AccessAdapterBase<CliAdapter, common::AppType::AiChat,
     void handle(const common::message::TaskCreateResp &resp);
     void handle(const common::message::TaskDeleteResp &resp);
 
-  protected:
+  public:
+    void showPrompt();
+
+    // must be public — called by AccessAdapterBase::run() via CRTP
     bool readFrontend();
+
+  private:
+    enum class State : uint8_t
+    {
+        NotLoggedIn,
+        LoggedInWithGtid
+    };
+
+    State state_ = State::NotLoggedIn;
+    bool waiting_ = false;
+
+    template <State S>
+    void handleCommandImpl(const std::string &line);
+    void handleCommand(const std::string &line);
+    void sendRegister(const std::string &username);
+    void sendLogin(const std::string &username);
+    void sendLogout();
+    void sendDelete();
+    void sendTaskCreate();
+    void sendChatMessage(const std::string &content);
+    void showHelp();
+    void resetState();
+
+    std::string currentUsername_;
+    uint16_t currentUid_ = 0xFFFF;
+    uint16_t currentGtid_ = 0xFFFF;
+    static constexpr common::ConnectionId kConnectionId = 0;
 };
 
 } // namespace access

@@ -27,7 +27,7 @@ class AccessAdapterBase : public utils::CrtpBase<Derived>
     static constexpr common::SessionFlags kSessionFlags = common::SessionFlags::make<kAppType>();
     static constexpr auto kPollTimeout = std::chrono::milliseconds(kPollTimeoutMs);
 
-    explicit AccessAdapterBase(caf::actor_system& sys) : receiver_(sys)
+    explicit AccessAdapterBase(caf::actor_system &sys) : receiver_(sys)
     {
         userToConn_.fill(common::kInvalidConnectionId);
         connToUser_.fill(common::kInvalidUserId);
@@ -65,6 +65,7 @@ class AccessAdapterBase : public utils::CrtpBase<Derived>
         msg.head.accessType = kAccessType;
         msg.head.appType = kAppType;
         msg.head.sessionFlags = kSessionFlags;
+        msg.head.targets = 0;
     }
 
     template <typename Msg>

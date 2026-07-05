@@ -25,9 +25,9 @@ void SessionData::handle(const common::message::TempConfig &msg)
     }
 }
 
-void SessionData::handle(const AiChatBusinessReq &req)
+void SessionData::handle(AiChatBusinessReq req)
 {
-    auto gtid = req.head.gtidList.empty() ? static_cast<uint16_t>(0) : req.head.gtidList[0];
+    auto gtid = req.head.gtidList.empty() ? common::kInvalidGtid : req.head.gtidList[0];
     std::cout << "[SessionData] received AiChatBusinessReq: gtid=0x" << std::hex << gtid << std::dec
               << " content=" << req.content << "\n";
 
@@ -37,12 +37,12 @@ void SessionData::handle(const AiChatBusinessReq &req)
         return;
     }
 
-    sendTo(routerAddr_, AiChatBusinessReq{req.head, req.content});
+    delegateTo(routerAddr_, std::move(req));
 }
 
-void SessionData::handle(const AiChatBusinessResp &resp)
+void SessionData::handle(AiChatBusinessResp resp)
 {
-    auto gtid = resp.head.gtidList.empty() ? static_cast<uint16_t>(0) : resp.head.gtidList[0];
+    auto gtid = resp.head.gtidList.empty() ? common::kInvalidGtid : resp.head.gtidList[0];
     std::cout << "[SessionData] received AiChatBusinessResp: gtid=0x" << std::hex << gtid
               << std::dec << " content=" << resp.content << "\n";
 
@@ -53,7 +53,24 @@ void SessionData::handle(const AiChatBusinessResp &resp)
         return;
     }
 
-    sendTo(accessGatewayAddr_, AiChatBusinessResp{resp.head, resp.success, resp.content});
+    resp.head.targets = userAccessBitset_.at(resp.head.uid);
+    delegateTo(accessGatewayAddr_, std::move(resp));
+}
+
+void SessionData::handle(AiChatMsgAck ack)
+{
+    auto gtid = ack.head.gtidList.empty() ? common::kInvalidGtid : ack.head.gtidList[0];
+    std::cout << "[SessionData] received AiChatMsgAck: gtid=0x" << std::hex << gtid << std::dec
+              << " seq=" << ack.seq << " content=" << ack.content << "\n";
+
+    if (not accessGatewayAddr_)
+    {
+        std::cerr << "[SessionData] ERROR: accessGatewayAddr not set, dropping AiChatMsgAck\n";
+        return;
+    }
+
+    ack.head.targets = userAccessBitset_.at(ack.head.uid);
+    delegateTo(accessGatewayAddr_, std::move(ack));
 }
 
 void SessionData::handle(const UserLoginSessionReq &req)
@@ -97,7 +114,7 @@ void SessionData::handle(const TaskDeleteSessionReq &req)
     sync.head.targets = userAccessBitset_.at(req.head.uid);
     sync.type = common::TaskSyncType::TaskDeleted;
     sync.gtid = gtid;
-    sendTo(accessGatewayAddr_, std::move(sync));
+    delegateTo(accessGatewayAddr_, std::move(sync));
 }
 
 void SessionData::handle(const UserLogoutSessionReq &req)

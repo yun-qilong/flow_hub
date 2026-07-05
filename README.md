@@ -55,6 +55,33 @@ Flow Hub 是一个基于 Actor 模型的消息驱动嵌入式编排平台。它�
 | BatchFanOut / FanOutMsg | 📐 设计中 | ADR-0022 |
 | 哨兵 GTID 新建 Task | 📐 设计中 | ADR-0023 |
 | 注册/登录/登出完整生命周期 | � 进行中 | 注册+登录已实现（6.2~6.3），登出/注销待实现 |
+| AccessAdapter 自适应轮询 | 📐 设计中 | idle 退避策略降低 CPU 占用（ADR-0027） |
+
+### 2.6 AccessAdapter 线程调度与 CPU 节能
+
+EO（消息驱动计算单元）受 CAF 框架调度，其工作窃取线程池自动管理 CPU 占用。但 **AccessAdapter 不同**——它运行在独立线程（`caf::scoped_actor`），框架无法干预其调度。`run()` 主循环交替执行两件事：
+
+```
+while (true) {
+    readFrontend();                            // ① 等待前端输入（poll/select）
+    receive_for(timeout, messageHandler_);     // ② 检查 CAF 邮箱（轮询）
+}
+```
+
+两处均可阻塞。增大阻塞时间 → 降低 CPU 利用率、增大延迟；减小则反之。
+
+**设计决策（ADR-0027）**：
+- 仅调整 **前端 poll 阻塞时间**。前端输入由硬件中断驱动——用户按键触发内核中断，`poll` 瞬间唤醒。增大 `poll` 超时只在 idle 期间生效，不影响交互体验。
+- **不改邮箱轮询间隔**——`receive_for` 无消息时让出 CPU，不构成 CPU 热点。
+
+| idle 时长 | 前端 poll | 效果 |
+|-----------|----------|------|
+| ≤ 30 秒 | 100ms | 正常响应 |
+| > 30 秒 | 1s | 深度睡眠，降低 CPU 占用 |
+
+后期通过配置文件调整，当前硬编码。
+
+多 Adapter 同时 idle 时叠加省电效果最显著。代码实现待后续完成。
 
 ---
 
