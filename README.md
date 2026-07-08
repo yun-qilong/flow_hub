@@ -173,7 +173,7 @@ uid 自携带 AppType（`uid & 0xFF`），无需额外字段或查表。同一�
 | **username 唯一性** | `usernameToId_`（`unordered_map<string, UserId>`）保证 username 全局唯一 |
 | **username 最长 12 字符** | `kMaxUsernameLen = 12`，超长注册直接拒绝。利于固定大小数据结构 |
 | **无反向索引** | 不维护 `userId → username` 映射。反向查找仅注销时用到，遍历 `usernameToId_`（≤64 项）即可，O(64) 可接受 |
-| **注册与 appType 解耦** | 注册只需 username，不需要 appType。`UserRegisterReq.head.appType` 仅用于拼装响应中的 `uid` |
+| **注册与 appType 解耦** | 注册只需 username，不需要 appType。响应仅含 `success` 状态，head 原样回传 |
 
 ### 3.6 内存模型
 

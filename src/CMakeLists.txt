@@ -6,6 +6,15 @@ add_subdirectory(access)
 add_subdirectory(CPlane)
 add_subdirectory(DPlane)
 
+# 确保生成的头文件在编译任何库之前就绪
+add_dependencies(commonLib gen_code)
+add_dependencies(utilsLib gen_code)
+add_dependencies(accessLib gen_code)
+add_dependencies(cplaneLib gen_code)
+add_dependencies(sessionLib gen_code)
+add_dependencies(businessLib gen_code)
+add_dependencies(serviceLib gen_code)
+
 # ---- 可执行文件 ------------------------------------------------
 add_executable(flowhub
     main.cpp

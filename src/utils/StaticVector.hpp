@@ -4,6 +4,8 @@
 #include <cstddef>
 #include <cstdint>
 
+#include "utils/Result.hpp"
+
 namespace utils
 {
 
@@ -45,6 +47,24 @@ class StaticVector
     const T &operator[](size_t i) const
     {
         return data_.at(i);
+    }
+
+    Result<T &> at(size_t i)
+    {
+        if (i >= size_)
+        {
+            return Result<T &>{};
+        }
+        return Result<T &>{data_[i]};
+    }
+
+    Result<const T &> at(size_t i) const
+    {
+        if (i >= size_)
+        {
+            return Result<const T &>{};
+        }
+        return Result<const T &>{data_[i]};
     }
 
     iterator erase(iterator pos)

@@ -19,6 +19,7 @@ FetchContent_MakeAvailable(caf)
 
 # ---- 依赖：GTest（仅当启用测试时）-------------------------------
 if(FLOWHUB_BUILD_TESTS)
+    enable_testing()
     FetchContent_Declare(
         googletest
         GIT_REPOSITORY https://github.com/google/googletest.git
@@ -49,5 +50,38 @@ add_custom_command(
 )
 add_custom_target(gen_code DEPENDS ${CMAKE_SOURCE_DIR}/src/generated/message/Messages.hpp)
 
+# ---- UT 编译 target（供 i but 使用）-----------------------------
+# flowhub_ut 必须在 add_subdirectory 之前定义，因为子目录会 add_dependencies 到它
+if(FLOWHUB_BUILD_TESTS)
+    add_custom_target(flowhub_ut)
+
+    # ---- 辅助函数：添加单元测试 ------------------------------------
+    # 用法: flowhub_add_ut(TestXxx SOURCES TestXxx.cpp ../Xxx.cpp [EXTRA_LIBS GTest::gmock_main])
+    function(flowhub_add_ut TEST_NAME)
+        cmake_parse_arguments(UT "" "" "SOURCES;EXTRA_LIBS" ${ARGN})
+
+        add_executable(${TEST_NAME} ${UT_SOURCES})
+        target_compile_definitions(${TEST_NAME} PRIVATE FLOWHUB_TEST_BUILD)
+        target_include_directories(${TEST_NAME} PRIVATE ${CMAKE_SOURCE_DIR}/src)
+        target_link_libraries(${TEST_NAME} PRIVATE CAF::core GTest::gtest_main ${UT_EXTRA_LIBS})
+        add_dependencies(${TEST_NAME} gen_code)
+        add_dependencies(flowhub_ut ${TEST_NAME})
+
+        include(GoogleTest)
+        gtest_discover_tests(${TEST_NAME} PROPERTIES LABELS "flowhub")
+    endfunction()
+endif()
+
 # ---- 进入子目录 -------------------------------------------------
 add_subdirectory(src)
+
+# ---- UT 基础编译 target（供 i but base 使用）--------------------
+# ut_base 依赖 flowhub target（在 src/ 中定义），因此放在 add_subdirectory 之后
+if(FLOWHUB_BUILD_TESTS)
+    add_custom_target(ut_base)
+    add_dependencies(ut_base
+        flowhub
+        gtest gtest_main
+        gmock gmock_main
+    )
+endif()

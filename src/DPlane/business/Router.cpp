@@ -47,7 +47,9 @@ void Router::handle(const RouterReconfigReq &req)
 
 void Router::handle(AiChatBusinessReq req)
 {
-    std::cout << "[Router] received AiChatBusinessReq, content=" << req.content << "\n";
+    auto gtid = req.head.gtidList[0];
+    std::cout << "[Router] received AiChatBusinessReq: gtid=0x" << std::hex << gtid << std::dec
+              << " contentSize=" << req.content.size() << "B\n";
     routeAndForward(std::move(req), "AiChatBusinessReq");
 }
 

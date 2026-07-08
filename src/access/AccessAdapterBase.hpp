@@ -65,6 +65,7 @@ class AccessAdapterBase : public utils::CrtpBase<Derived>
         msg.head.accessType = kAccessType;
         msg.head.appType = kAppType;
         msg.head.sessionFlags = kSessionFlags;
+        msg.head.uid = common::kInvalidUid;
         msg.head.targets = 0;
     }
 

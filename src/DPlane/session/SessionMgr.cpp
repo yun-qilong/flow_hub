@@ -42,14 +42,14 @@ void SessionMgr::handle(const UserRegisterReq &req)
     {
         std::cerr << "[SessionMgr] register failed: username too long (max " << +kMaxUsernameLen
                   << ")\n";
-        sendRegisterResp(resp, kInvalidUid, false);
+        sendRegisterResp(resp, false);
         return;
     }
 
     if (usernameToId_.count(req.username) != 0)
     {
         std::cerr << "[SessionMgr] register failed: username already exists\n";
-        sendRegisterResp(resp, kInvalidUid, false);
+        sendRegisterResp(resp, false);
         return;
     }
 
@@ -57,7 +57,7 @@ void SessionMgr::handle(const UserRegisterReq &req)
     if (userId == kInvalidUserId)
     {
         std::cerr << "[SessionMgr] register failed: no free userId\n";
-        sendRegisterResp(resp, kInvalidUid, false);
+        sendRegisterResp(resp, false);
         return;
     }
 
@@ -66,7 +66,7 @@ void SessionMgr::handle(const UserRegisterReq &req)
     auto uid = makeUid(userId, appType);
     std::cout << "[SessionMgr] registered: userId=" << static_cast<int>(userId) << " uid=0x"
               << std::hex << uid << std::dec << "\n";
-    sendRegisterResp(resp, uid, true);
+    sendRegisterResp(resp, true);
 
     UserRegisterSessionReq registerReq;
     registerReq.head = req.head;
@@ -154,9 +154,8 @@ SessionMgr::buildLoginSessionReq(const UserHead &head, uint16_t uid,
     return req;
 }
 
-void SessionMgr::sendRegisterResp(UserRegisterResp &resp, uint16_t uid, bool success)
+void SessionMgr::sendRegisterResp(UserRegisterResp &resp, bool success)
 {
-    resp.head.uid = uid;
     resp.success = success;
     sendTo(accessGatewayAddr_, std::move(resp));
 }

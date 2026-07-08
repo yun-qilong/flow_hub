@@ -79,7 +79,7 @@ class SessionMgr : public fw::EoBase<SessionMgr>
     common::message::UserLoginSessionReq
     buildLoginSessionReq(const common::message::UserHead &head, uint16_t uid,
                          const utils::StaticVector<common::GTID, common::kMaxGtidsPerUser> &gtids);
-    void sendRegisterResp(common::message::UserRegisterResp &resp, uint16_t uid, bool success);
+    void sendRegisterResp(common::message::UserRegisterResp &resp, bool success);
     void sendLoginResp(common::message::UserLoginResp &resp, uint16_t uid, bool success,
                        bool needWaitForData,
                        utils::StaticVector<common::GTID, common::kMaxGtidsPerUser> gtids);

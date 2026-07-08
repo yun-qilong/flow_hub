@@ -42,7 +42,7 @@ void AiChatBus<T>::handle(const AiChatBusinessReq &req)
 {
     auto gtid = req.head.gtidList[0];
     std::cout << "[AiChatBus] received AiChatBusinessReq: gtid=0x" << std::hex << gtid << std::dec
-              << " content=" << req.content << "\n";
+              << " contentSize=" << req.content.size() << "B\n";
 
     pool_.getContext<ContextType>(gtid).useOrFailed(
         [&](ContextType &ctx) { processServiceRequest(ctx, req, gtid); },
@@ -58,7 +58,7 @@ void AiChatBus<T>::handle(const AiChatServiceResp &resp)
 {
     auto gtid = resp.head.gtidList[0];
     std::cout << "[AiChatBus] received AiChatServiceResp: gtid=0x" << std::hex << gtid << std::dec
-              << " content=" << resp.content << "\n";
+              << " contentSize=" << resp.content.size() << "B\n";
 
     pool_.getContext<ContextType>(gtid).useOrFailed(
         [&](ContextType &ctx) { processBusinessResp(ctx, resp, gtid); },
@@ -78,8 +78,8 @@ void AiChatBus<T>::processServiceRequest(ContextType &ctx, const AiChatBusinessR
 
     sendAck(req.head, gtid, seq, req.content);
 
-    std::cout << "[AiChatBus] msg committed: seq=" << seq << " content=" << req.content
-              << (ctx.pendingReqSeq != 0 ? " (preempting)" : "") << "\n";
+    std::cout << "[AiChatBus] msg committed: seq=" << seq << " contentSize=" << req.content.size()
+              << "B" << (ctx.pendingReqSeq != 0 ? " (preempting)" : "") << "\n";
 
     ctx.pendingReqSeq = seq;
 
@@ -89,7 +89,7 @@ void AiChatBus<T>::processServiceRequest(ContextType &ctx, const AiChatBusinessR
         return;
     }
 
-    auto serviceReq = buildAiChatServiceReq(gtid, "[" + std::move(body) + "]", ctx, seq);
+    auto serviceReq = buildAiChatServiceReq(req.head, gtid, "[" + std::move(body) + "]", ctx, seq);
     std::cout << "[AiChatBus] sending AiChatServiceReq (reqSeq=" << seq << ") to gateway\n";
     this->sendTo(serviceGatewayAddr_, std::move(serviceReq));
 }
@@ -187,7 +187,8 @@ void AiChatBus<T>::writeMessagesToContext(ContextType &ctx, const std::string &b
 }
 
 template <common::TaskType T>
-AiChatServiceReq AiChatBus<T>::buildAiChatServiceReq(uint16_t gtid, std::string messagesJson,
+AiChatServiceReq AiChatBus<T>::buildAiChatServiceReq(const UserHead &reqHead, uint16_t gtid,
+                                                     std::string messagesJson,
                                                      const ContextType &ctx, uint16_t reqSeq)
 {
     std::string modelName(
@@ -195,6 +196,8 @@ AiChatServiceReq AiChatBus<T>::buildAiChatServiceReq(uint16_t gtid, std::string 
         strnlen(reinterpret_cast<const char *>(ctx.modelName.data()), ctx.modelName.size()));
 
     AiChatServiceReq req;
+    req.head.uid = reqHead.uid;
+    req.head.accessType = reqHead.accessType;
     req.head.gtidList = {gtid};
     req.messagesJson = std::move(messagesJson);
     req.modelName = modelName.empty() ? defaultModelName_ : modelName;

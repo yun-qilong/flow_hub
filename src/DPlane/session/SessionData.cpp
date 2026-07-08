@@ -29,7 +29,7 @@ void SessionData::handle(AiChatBusinessReq req)
 {
     auto gtid = req.head.gtidList.empty() ? common::kInvalidGtid : req.head.gtidList[0];
     std::cout << "[SessionData] received AiChatBusinessReq: gtid=0x" << std::hex << gtid << std::dec
-              << " content=" << req.content << "\n";
+              << " contentSize=" << req.content.size() << "B\n";
 
     if (not routerAddr_)
     {
@@ -44,7 +44,7 @@ void SessionData::handle(AiChatBusinessResp resp)
 {
     auto gtid = resp.head.gtidList.empty() ? common::kInvalidGtid : resp.head.gtidList[0];
     std::cout << "[SessionData] received AiChatBusinessResp: gtid=0x" << std::hex << gtid
-              << std::dec << " content=" << resp.content << "\n";
+              << std::dec << " contentSize=" << resp.content.size() << "B\n";
 
     if (not accessGatewayAddr_)
     {
@@ -61,7 +61,7 @@ void SessionData::handle(AiChatMsgAck ack)
 {
     auto gtid = ack.head.gtidList.empty() ? common::kInvalidGtid : ack.head.gtidList[0];
     std::cout << "[SessionData] received AiChatMsgAck: gtid=0x" << std::hex << gtid << std::dec
-              << " seq=" << ack.seq << " content=" << ack.content << "\n";
+              << " seq=" << ack.seq << " contentSize=" << ack.content.size() << "B\n";
 
     if (not accessGatewayAddr_)
     {
