@@ -35,5 +35,8 @@ __pycache__/
 # Plugin
 .continue/
 
+# Local Gerrit CI (not for GitHub)
+scripts/gerrit-ci-watcher.service
+
 # Prompts
 .prompts/

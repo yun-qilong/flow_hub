@@ -28,26 +28,27 @@ class StaticBitMap
 
     using DeducedStorage = std::conditional_t<
         BitCount <= 8, uint8_t,
-        std::conditional_t<
-            BitCount <= 16, uint16_t,
-            std::conditional_t<BitCount <= 32, uint32_t, uint64_t>>>;
+        std::conditional_t<BitCount <= 16, uint16_t,
+                           std::conditional_t<BitCount <= 32, uint32_t, uint64_t>>>;
 
-    using StorageType =
-        std::conditional_t<kStorageProvided, StorageT, DeducedStorage>;
+    using StorageType = std::conditional_t<kStorageProvided, StorageT, DeducedStorage>;
 
     // 编译期算最大位宽，避免 sizeof(void)
-    static constexpr size_t kMaxBits = []() constexpr -> size_t {
-        if constexpr (kStorageProvided) {
+    static constexpr size_t kMaxBits = []() constexpr -> size_t
+    {
+        if constexpr (kStorageProvided)
+        {
             return sizeof(StorageT) * 8;
-        } else {
+        }
+        else
+        {
             return sizeof(DeducedStorage) * 8;
         }
     }();
 
     static_assert(not kStorageProvided or (BitCount <= kMaxBits),
                   "Provided StorageT is too small for BitCount");
-    static_assert(BitCount <= kMaxBits,
-                  "BitCount exceeds maximum storage width (64 bits)");
+    static_assert(BitCount <= kMaxBits, "BitCount exceeds maximum storage width (64 bits)");
 
     static constexpr StorageType kFullMask = []() constexpr
     {
@@ -122,8 +123,7 @@ class StaticBitMap
         {
             return -1;
         }
-        uint64_t freeBits =
-            (~static_cast<uint64_t>(mask_)) & static_cast<uint64_t>(kFullMask);
+        uint64_t freeBits = (~static_cast<uint64_t>(mask_)) & static_cast<uint64_t>(kFullMask);
         return __builtin_ctzll(freeBits);
     }
 

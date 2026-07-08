@@ -9,7 +9,8 @@ namespace DPlane::service
 
 using namespace common::message;
 
-ServiceGateway::ServiceGateway(fw::EoConfig &cfg, fw::EoAddress serviceMgrAddr, fw::EoAddress aiChatBusAddr)
+ServiceGateway::ServiceGateway(fw::EoConfig &cfg, fw::EoAddress serviceMgrAddr,
+                               fw::EoAddress aiChatBusAddr)
     : fw::EoBase<ServiceGateway>(cfg)
 {
     sendTo(serviceMgrAddr, common::message::TempConfig{8});
