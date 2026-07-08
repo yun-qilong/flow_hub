@@ -28,9 +28,12 @@ _deps/
 # Python
 __pycache__/
 
+# GitHub (only track workflows)
+.github/*
+!.github/workflows/
+
 # Plugin
 .continue/
-.github/
 
 # Prompts
 .prompts/
