@@ -14,7 +14,7 @@
 #include <chrono>
 #include <cstdint>
 
-namespace access
+namespace userAccess
 {
 
 template <typename Derived, common::AppType kApp, common::AccessType kAcc, typename Connection,
@@ -104,4 +104,4 @@ class AccessAdapterBase : public utils::CrtpBase<Derived>
     fw::MessageHandler messageHandler_;
 };
 
-} // namespace access
+} // namespace userAccess

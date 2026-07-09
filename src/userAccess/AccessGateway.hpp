@@ -7,7 +7,7 @@
 #include <array>
 #include <cstdint>
 
-namespace access
+namespace userAccess
 {
 
 class AccessGateway : public fw::EoBase<AccessGateway>
@@ -71,4 +71,4 @@ class AccessGateway : public fw::EoBase<AccessGateway>
     std::array<fw::EoAddress, common::kMaxAccessTypes> adapterTable_;
 };
 
-} // namespace access
+} // namespace userAccess

@@ -1,13 +1,13 @@
 #pragma once
 
-#include "access/AccessAdapterBase.hpp"
 #include "generated/message/Messages.hpp"
 #include "generated/type/AccessType.hpp"
 #include "generated/type/AppType.hpp"
+#include "userAccess/AccessAdapterBase.hpp"
 
 #include <string>
 
-namespace access
+namespace userAccess
 {
 
 struct NoConnection
@@ -77,4 +77,4 @@ class CliAdapter : public AccessAdapterBase<CliAdapter, common::AppType::AiChat,
     static constexpr common::ConnectionId kConnectionId = 0;
 };
 
-} // namespace access
+} // namespace userAccess

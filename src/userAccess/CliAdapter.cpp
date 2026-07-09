@@ -1,4 +1,4 @@
-#include "access/CliAdapter.hpp"
+#include "userAccess/CliAdapter.hpp"
 #include "common/Constants.hpp"
 #include "fw/EoEnv.hpp"
 
@@ -6,7 +6,7 @@
 #include <poll.h>
 #include <sstream>
 
-namespace access
+namespace userAccess
 {
 
 bool CliAdapter::readFrontend()
@@ -421,4 +421,4 @@ void CliAdapter::handle(const common::message::TaskDeleteResp &resp)
     }
 }
 
-} // namespace access
+} // namespace userAccess

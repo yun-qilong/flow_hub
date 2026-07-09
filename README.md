@@ -192,7 +192,7 @@ uid 自携带 AppType（`uid & 0xFF`），无需额外字段或查表。同一�
 
 ```
 ┌──────────────────────────────────────────────────────────────┐
-│ Access Layer（接入层 · 不分面）                               │
+│ userAccess Layer（接入层 · 不分面）                               │
 │                                                              │
 │   CLIAdapter ──── AccessGateway ──── WsAdapter               │
 │                                                              │
@@ -250,7 +250,7 @@ uid 自携带 AppType（`uid & 0xFF`），无需额外字段或查表。同一�
 ## 5. 各层 EO 部署
 
 ```
-Access Layer（接入层 · 不分面）
+userAccess Layer（接入层 · 不分面）
 ├── CLIAdapter               stdin/stdout -> 内部格式（非 EO，独立线程）
 ├── WsAdapter                WebSocket -> 内部格式（非 EO，独立线程）
 └── AccessGateway            分拣：控制类→SessionMgr / 哨兵GTID→SessionMgr / 数据类→SessionData

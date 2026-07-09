@@ -5,8 +5,6 @@
 #include "fw/EoEnv.hpp"
 #include "generated/TaskType.hpp"
 
-#include "access/AccessGateway.hpp"
-#include "access/CliAdapter.hpp"
 #include "CPlane/BusinessMgr.hpp"
 #include "DPlane/business/AiChatBus.hpp"
 #include "DPlane/business/Router.hpp"
@@ -15,6 +13,8 @@
 #include "DPlane/service/ServiceMgr.hpp"
 #include "DPlane/session/SessionData.hpp"
 #include "DPlane/session/SessionMgr.hpp"
+#include "userAccess/AccessGateway.hpp"
+#include "userAccess/CliAdapter.hpp"
 
 #include <chrono>
 #include <cstdlib>
@@ -60,8 +60,8 @@ int main()
 
     // --- Access 层 ---
     // CliAdapter 先创建，AccessGateway 构造时接收其地址并向其发 TempConfig
-    access::CliAdapter cliAdapter(env.system());
-    auto accessGateway = env.createEo<access::AccessGateway>(cliAdapter.myAddress());
+    userAccess::CliAdapter cliAdapter(env.system());
+    auto accessGateway = env.createEo<userAccess::AccessGateway>(cliAdapter.myAddress());
 
     // --- Session 层 ---
     auto sessionData = env.createEo<DPlane::session::SessionData>(accessGateway);

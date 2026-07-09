@@ -1,6 +1,6 @@
-#include "access/AccessGateway.hpp"
+#include "userAccess/AccessGateway.hpp"
 
-namespace access
+namespace userAccess
 {
 
 AccessGateway::AccessGateway(fw::EoConfig &cfg, fw::EoAddress cliAdapter)
@@ -140,4 +140,4 @@ void AccessGateway::handle(common::message::TaskSync sync)
     routeToAdapters(sync);
 }
 
-} // namespace access
+} // namespace userAccess
