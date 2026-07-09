@@ -1,3 +1,5 @@
+HeaderFilterRegex: '.*/flowHub[^/]*/src/(common|fw|DPlane|CPlane|access|utils|generated)/.*\.(hpp|cpp)$'
+
 Checks: >
   -*,
   bugprone-*,

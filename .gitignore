@@ -38,5 +38,5 @@ __pycache__/
 # Local Gerrit CI (not for GitHub)
 scripts/gerrit-ci-watcher.service
 
-# Prompts
-.prompts/
+# Build artifacts
+compile_commands.json

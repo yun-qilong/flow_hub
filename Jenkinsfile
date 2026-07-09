@@ -38,5 +38,12 @@ echo "Format check complete"'''
         }
       }
     }
+    stage('Tidy') {
+      steps {
+        dir('src') {
+          sh 'python3 scripts/run_tidy.py'
+        }
+      }
+    }
   }
 }
