@@ -24,12 +24,4 @@ void BusinessMgr::handle(const TempConfig &msg)
     }
 }
 
-void BusinessMgr::handle(const InternalPong &msg)
-{
-    std::cout << "[BusinessMgr] received InternalPong: number=" << msg.number
-              << ", message=" << msg.message << "\n";
-    std::cout << "[BusinessMgr] done, quitting.\n";
-    stop();
-}
-
 } // namespace CPlane
