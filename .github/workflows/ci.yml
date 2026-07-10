@@ -16,7 +16,6 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y libcurl4-openssl-dev python3 clang-format-15 clang-tidy-14
-          sudo update-alternatives --install /usr/bin/clang-tidy clang-tidy /usr/bin/clang-tidy-14 100
 
       - name: Build
         run: |
@@ -43,4 +42,6 @@ jobs:
           echo "Format check passed"
 
       - name: Tidy
+        env:
+          CLANG_TIDY_BIN: clang-tidy-14
         run: python3 scripts/run_tidy.py

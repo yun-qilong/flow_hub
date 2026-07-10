@@ -290,6 +290,7 @@ def main():
 
     files = sorted(set(e["file"] for e in project_entries))
     tidy_config = Path(".clang-tidy")
+    tidy_bin = os.environ.get("CLANG_TIDY_BIN", "clang-tidy")
 
     if not tidy_config.exists():
         print("No .clang-tidy config, skipping", file=sys.stderr)
@@ -300,7 +301,7 @@ def main():
         if file_path is None:
             return None
         result = subprocess.run(
-            ["clang-tidy",
+            [tidy_bin,
              f"--config-file={tidy_config}",
              f"-p={build_dir}",
              "--extra-arg=-ferror-limit=1",
