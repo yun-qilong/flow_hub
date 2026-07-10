@@ -5,27 +5,41 @@ on:
     branches: [main, master]
 
 jobs:
-  build-and-test:
+  post-check:
     runs-on: ubuntu-latest
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Install system dependencies
+      - name: Install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y libcurl4-openssl-dev python3
+          sudo apt-get install -y libcurl4-openssl-dev python3 clang-format-15 clang-tidy
 
-      - name: Configure CMake
-        run: cmake -B build -DCMAKE_BUILD_TYPE=Release -DFLOWHUB_BUILD_TESTS=ON -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
+      - name: Build
+        run: |
+          cmake -B build -DCMAKE_BUILD_TYPE=Release -DFLOWHUB_BUILD_TESTS=ON -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
+          cmake --build build --target flowhub flowhub_ut -j $(nproc)
 
-      - name: Build project
-        run: cmake --build build --target flowhub -j $(nproc)
-
-      - name: Build unit tests
-        run: cmake --build build --target flowhub_ut -j $(nproc)
-
-      - name: Run unit tests
+      - name: Test
         working-directory: build
         run: ctest --output-on-failure -L flowhub
+
+      - name: Format
+        run: |
+          FILES=$(find src -name "*.cpp" -o -name "*.hpp" | grep -v "/generated/" | grep -v "/build/" | sort)
+          FAIL=0
+          for f in $FILES; do
+            [ -f "$f" ] || continue
+            if ! clang-format-15 --dry-run --Werror "$f" 2>/dev/null; then
+              echo "==== FORMAT ISSUES: $f ===="
+              diff -u "$f" <(clang-format-15 "$f") 2>/dev/null || true
+              FAIL=1
+            fi
+          done
+          if [ "$FAIL" != "0" ]; then echo "Format check FAILED"; exit 1; fi
+          echo "Format check passed"
+
+      - name: Tidy
+        run: python3 scripts/run_tidy.py
