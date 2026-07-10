@@ -1,5 +1,6 @@
 include message/UserHead.mt
+include type/types.mt
 
 message UserLoginSessionReq
     UserHead head
-    StaticVector<uint16, kMaxGtidsPerUser> gtids
+    StaticVector<GTID, kMaxGtidsPerUser> gtids

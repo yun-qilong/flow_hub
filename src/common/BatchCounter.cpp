@@ -34,7 +34,7 @@ void BatchCounter::reapTimeoutCounters()
     uint16_t bitmap = activeBitmap_;
     while (bitmap)
     {
-        size_t i = static_cast<size_t>(__builtin_ctz(bitmap));
+        auto i = static_cast<size_t>(__builtin_ctz(bitmap));
         if (isTimeout(i))
         {
             std::cerr << "[BatchCounter] WARNING: counter index=" << i << " timed out, releasing\n";

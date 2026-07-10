@@ -1,4 +1,5 @@
 include message/UserHead.mt
+include type/types.mt
 
 message UserLoginResp
     UserHead head
@@ -6,4 +7,4 @@ message UserLoginResp
     uint8 connectionId
     bool success
     bool needWaitForData
-    StaticVector<uint16, kMaxGtidsPerUser> gtids
+    StaticVector<GTID, kMaxGtidsPerUser> gtids

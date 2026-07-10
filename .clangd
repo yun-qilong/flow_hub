@@ -1,0 +1,17 @@
+Diagnostics:
+  ClangTidy:
+    Remove:
+      - google-readability-avoid-underscore-in-googletest-name
+      - readability-identifier-naming
+      - cppcoreguidelines-macro-usage
+      - cppcoreguidelines-pro-type-member-init
+      - google-explicit-constructor
+      - readability-else-after-return
+      - readability-named-parameter
+      - readability-redundant-member-init
+      - readability-implicit-bool-conversion
+      - modernize-use-nodiscard
+      - google-readability-braces-around-statements
+      - readability-braces-around-statements
+      - readability-redundant-access-specifiers
+      - readability-qualified-auto

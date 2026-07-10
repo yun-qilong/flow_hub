@@ -9,7 +9,16 @@
 namespace DPlane::session
 {
 
-using namespace common::message;
+using AiChatBusinessReq = common::message::AiChatBusinessReq;
+using AiChatBusinessResp = common::message::AiChatBusinessResp;
+using AiChatMsgAck = common::message::AiChatMsgAck;
+using TaskDeleteSessionReq = common::message::TaskDeleteSessionReq;
+using TaskSync = common::message::TaskSync;
+using UserLoginSessionReq = common::message::UserLoginSessionReq;
+using UserLoginSessionResp = common::message::UserLoginSessionResp;
+using UserLogoutSessionReq = common::message::UserLogoutSessionReq;
+using UserLogoutSessionResp = common::message::UserLogoutSessionResp;
+using UserRegisterSessionReq = common::message::UserRegisterSessionReq;
 
 SessionData::SessionData(fw::EoConfig &cfg, fw::EoAddress accessGatewayAddr)
     : fw::EoBase<SessionData>(cfg), accessGatewayAddr_(std::move(accessGatewayAddr))

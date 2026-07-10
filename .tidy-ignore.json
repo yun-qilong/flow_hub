@@ -1,0 +1,42 @@
+{
+    "_doc": "Global ignore rules — these checks/paths never appear in the whitelist.",
+    "ignored_checks": [
+        "readability-identifier-naming",
+        "cppcoreguidelines-macro-usage",
+        "cppcoreguidelines-pro-type-member-init",
+        "google-explicit-constructor",
+        "readability-else-after-return",
+        "readability-named-parameter",
+        "readability-redundant-member-init",
+        "readability-implicit-bool-conversion",
+        "modernize-use-nodiscard",
+        "google-readability-braces-around-statements",
+        "readability-braces-around-statements",
+        "readability-redundant-access-specifiers",
+        "readability-qualified-auto"
+    ],
+    "path_rules": [
+        {
+            "pattern": "**/ut/**",
+            "desc": "UT files — skip all checks",
+            "ignored_checks": [
+                "*"
+            ]
+        },
+        {
+            "pattern": "src/generated/**",
+            "desc": "Generated code — skip all checks",
+            "ignored_checks": [
+                "*"
+            ]
+        },
+        {
+            "pattern": "src/utils/**",
+            "desc": "Utility files — skip function-size and complexity checks",
+            "ignored_checks": [
+                "readability-function-size",
+                "readability-function-cognitive-complexity"
+            ]
+        }
+    ]
+}

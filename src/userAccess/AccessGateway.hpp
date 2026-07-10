@@ -13,7 +13,7 @@ namespace userAccess
 class AccessGateway : public fw::EoBase<AccessGateway>
 {
   public:
-    AccessGateway(fw::EoConfig &cfg, fw::EoAddress cliAdapter);
+    AccessGateway(fw::EoConfig &cfg, const fw::EoAddress &cliAdapter);
 
     void handle(const common::message::UserRegisterReq &req);
     void handle(common::message::UserRegisterResp resp);

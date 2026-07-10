@@ -10,8 +10,15 @@
 namespace DPlane::business
 {
 
-using namespace common;
-using namespace common::message;
+using TaskPool = common::TaskPool;
+using AiChatBusinessReq = common::message::AiChatBusinessReq;
+using GTID = common::GTID;
+using UserHead = common::message::UserHead;
+using AiChatServiceReq = common::message::AiChatServiceReq;
+using AiChatBusinessResp = common::message::AiChatBusinessResp;
+using AiChatMsgAck = common::message::AiChatMsgAck;
+using AiChatServiceReq = common::message::AiChatServiceReq;
+using AiChatServiceResp = common::message::AiChatServiceResp;
 
 // 首轮自动预置的 system prompt（含尾部逗号分隔符）
 static constexpr std::string_view SYSTEM_PROMPT =
@@ -61,7 +68,7 @@ void AiChatBus<T>::handle(const AiChatServiceResp &resp)
               << " contentSize=" << resp.content.size() << "B\n";
 
     pool_.getContext<ContextType>(gtid).useOrFailed(
-        [&](ContextType &ctx) { processBusinessResp(ctx, resp, gtid); },
+        [&](ContextType &ctx) { processBusinessResp(ctx, resp); },
         [gtid]()
         {
             std::cerr << "[AiChatBus] ERROR: no context for gtid=0x" << std::hex << gtid << std::dec
@@ -95,7 +102,7 @@ void AiChatBus<T>::processServiceRequest(ContextType &ctx, const AiChatBusinessR
 }
 
 template <common::TaskType T>
-void AiChatBus<T>::processBusinessResp(ContextType &ctx, const AiChatServiceResp &resp, GTID gtid)
+void AiChatBus<T>::processBusinessResp(ContextType &ctx, const AiChatServiceResp &resp)
 {
     if (ctx.pendingReqSeq == 0)
     {
@@ -180,8 +187,7 @@ void AiChatBus<T>::writeMessagesToContext(ContextType &ctx, const std::string &b
     int newLen = static_cast<int>(body.size());
     if (newLen <= static_cast<int>(ctx.messagesBuffer.size()))
     {
-        auto *buf = reinterpret_cast<char *>(ctx.messagesBuffer.data());
-        std::memcpy(buf, body.data(), newLen);
+        std::memcpy(ctx.messagesBuffer.data(), body.data(), body.size());
         ctx.messagesLen = newLen;
     }
 }
@@ -219,8 +225,7 @@ void AiChatBus<T>::appendAssistantMsg(ContextType &ctx, const std::string &conte
         return;
     }
 
-    auto *buf = reinterpret_cast<char *>(ctx.messagesBuffer.data());
-    std::memcpy(buf + ctx.messagesLen, append.data(), append.size());
+    std::memcpy(&ctx.messagesBuffer.at(ctx.messagesLen), append.data(), append.size());
     ctx.messagesLen = newLen;
 }
 

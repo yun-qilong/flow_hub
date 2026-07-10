@@ -1,4 +1,4 @@
-// src/DPlane/session/SessionMgr.hpp
+// src/CPlane/SessionMgr.hpp
 // Data-plane session layer — Session Manager (GTID lifecycle)
 //
 // 负责 GTID 的分配与回收，作为会话生命周期的管控入口。
@@ -21,7 +21,7 @@ namespace common
 class TaskPool;
 }
 
-namespace DPlane::session
+namespace CPlane
 {
 
 struct UserRecord
@@ -36,30 +36,42 @@ struct UserRecord
     }
 };
 
+using TempConfig = common::message::TempConfig;
+using UserRegisterReq = common::message::UserRegisterReq;
+using UserRegisterResp = common::message::UserRegisterResp;
+using UserLoginReq = common::message::UserLoginReq;
+using UserLoginResp = common::message::UserLoginResp;
+using UserLogoutReq = common::message::UserLogoutReq;
+using UserLogoutResp = common::message::UserLogoutResp;
+using UserDeleteReq = common::message::UserDeleteReq;
+using UserDeleteResp = common::message::UserDeleteResp;
+using TaskCreateReq = common::message::TaskCreateReq;
+using TaskDeleteReq = common::message::TaskDeleteReq;
+
 class SessionMgr : public fw::EoBase<SessionMgr>
 {
   public:
     explicit SessionMgr(fw::EoConfig &cfg, common::TaskPool &pool, fw::EoAddress accessGatewayAddr,
                         fw::EoAddress sessionDataAddr);
 
-    void handle(const common::message::UserRegisterReq &req);
-    void handle(const common::message::UserLoginReq &req);
-    void handle(const common::message::UserLogoutReq &req);
-    void handle(const common::message::UserDeleteReq &req);
-    void handle(const common::message::TaskCreateReq &req);
-    void handle(const common::message::TaskDeleteReq &req);
-    void handle(const common::message::TempConfig &msg);
+    void handle(const UserRegisterReq &req);
+    void handle(const UserLoginReq &req);
+    void handle(const UserLogoutReq &req);
+    void handle(const UserDeleteReq &req);
+    void handle(const TaskCreateReq &req);
+    void handle(const TaskDeleteReq &req);
+    void handle(const TempConfig &msg);
 
   protected:
     void init() override
     {
-        onMsg<common::message::TempConfig>();
-        onMsg<common::message::UserRegisterReq>();
-        onMsg<common::message::UserLoginReq>();
-        onMsg<common::message::UserLogoutReq>();
-        onMsg<common::message::UserDeleteReq>();
-        onMsg<common::message::TaskCreateReq>();
-        onMsg<common::message::TaskDeleteReq>();
+        onMsg<TempConfig>();
+        onMsg<UserRegisterReq>();
+        onMsg<UserLoginReq>();
+        onMsg<UserLogoutReq>();
+        onMsg<UserDeleteReq>();
+        onMsg<TaskCreateReq>();
+        onMsg<TaskDeleteReq>();
     }
 
   private:
@@ -68,7 +80,6 @@ class SessionMgr : public fw::EoBase<SessionMgr>
         switch (app)
         {
         case common::AppType::AiChat:
-            return task == common::TaskType::AiChat;
         case common::AppType::AiDiscussion:
             return task == common::TaskType::AiChat;
         }
@@ -76,9 +87,9 @@ class SessionMgr : public fw::EoBase<SessionMgr>
     }
 
     common::UserId allocateUserId();
-    common::message::UserLoginSessionReq
-    buildLoginSessionReq(const common::message::UserHead &head, uint16_t uid,
-                         const utils::StaticVector<common::GTID, common::kMaxGtidsPerUser> &gtids);
+    common::message::UserLoginSessionReq static buildLoginSessionReq(
+        const common::message::UserHead &head, uint16_t uid,
+        const utils::StaticVector<common::GTID, common::kMaxGtidsPerUser> &gtids);
     void sendRegisterResp(common::message::UserRegisterResp &resp, bool success);
     void sendLoginResp(common::message::UserLoginResp &resp, uint16_t uid, bool success,
                        bool needWaitForData,
@@ -98,4 +109,4 @@ class SessionMgr : public fw::EoBase<SessionMgr>
     std::bitset<common::kMaxUsers> uidBitset_;
 };
 
-} // namespace DPlane::session
+} // namespace CPlane

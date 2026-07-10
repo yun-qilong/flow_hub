@@ -6,13 +6,13 @@
 #include "generated/TaskType.hpp"
 
 #include "CPlane/BusinessMgr.hpp"
+#include "CPlane/SessionMgr.hpp"
 #include "DPlane/business/AiChatBus.hpp"
 #include "DPlane/business/Router.hpp"
 #include "DPlane/service/AiApiAdapter.hpp"
 #include "DPlane/service/ServiceGateway.hpp"
 #include "DPlane/service/ServiceMgr.hpp"
 #include "DPlane/session/SessionData.hpp"
-#include "DPlane/session/SessionMgr.hpp"
 #include "userAccess/AccessGateway.hpp"
 #include "userAccess/CliAdapter.hpp"
 
@@ -21,8 +21,8 @@
 #include <iostream>
 #include <string>
 
-using namespace common;
-using namespace common::message;
+using TaskPool = common::TaskPool;
+using TaskType = common::TaskType;
 
 static void printBanner()
 {
@@ -46,11 +46,17 @@ int main()
 
     // 未设环境变量时使用硬编码默认值
     if (apiKey == nullptr)
+    {
         apiKey = "sk-ck49fnhqcb9uo91pqjvra4o53or7hahiyrhps2ztsedcl0mi";
+    }
     if (apiUrl == nullptr)
+    {
         apiUrl = "https://api.xiaomimimo.com";
+    }
     if (model == nullptr)
+    {
         model = "mimo-v2.5";
+    }
 
     std::cout << "FlowHub v0.2.0 — AI Chat\n"
               << "  API: " << apiUrl << "\n"
@@ -65,7 +71,7 @@ int main()
 
     // --- Session 层 ---
     auto sessionData = env.createEo<DPlane::session::SessionData>(accessGateway);
-    auto sessionMgr = env.createEo<DPlane::session::SessionMgr>(pool, accessGateway, sessionData);
+    auto sessionMgr = env.createEo<CPlane::SessionMgr>(pool, accessGateway, sessionData);
 
     // --- Business 层 ---
     // C面

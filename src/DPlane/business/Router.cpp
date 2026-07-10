@@ -3,18 +3,24 @@
 #include "DPlane/business/Router.hpp"
 
 #include <iostream>
+#include <utility>
 
 namespace DPlane::business
 {
 
-using namespace fw;
-using namespace common::message;
+using AiChatBusinessReq = common::message::AiChatBusinessReq;
+using AiChatServiceResp = common::message::AiChatServiceResp;
+using RouterConfigReq = common::message::RouterConfigReq;
+using RouterConfigResp = common::message::RouterConfigResp;
+using RouterReconfigReq = common::message::RouterReconfigReq;
+using RouterReconfigResp = common::message::RouterReconfigResp;
+using EoConfig = fw::EoConfig;
 
 Router::Router(EoConfig &cfg, fw::EoAddress businessMgrAddr, fw::EoAddress sessionDataAddr)
     : EoBase<Router>(cfg), businessMgrAddr_(std::move(businessMgrAddr))
 {
     sendTo(businessMgrAddr_, common::message::TempConfig{5});
-    sendTo(sessionDataAddr, common::message::TempConfig{3});
+    sendTo(std::move(sessionDataAddr), common::message::TempConfig{3});
 }
 
 void Router::handle(const common::message::TempConfig &msg)

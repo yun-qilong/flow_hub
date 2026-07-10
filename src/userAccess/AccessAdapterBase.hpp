@@ -25,7 +25,7 @@ class AccessAdapterBase : public utils::CrtpBase<Derived>
     static constexpr common::AppType kAppType = kApp;
     static constexpr common::AccessType kAccessType = kAcc;
     static constexpr common::SessionFlags kSessionFlags = common::SessionFlags::make<kAppType>();
-    static constexpr auto kPollTimeout = std::chrono::milliseconds(kPollTimeoutMs);
+    static constexpr auto kPollTimeout = std::chrono::milliseconds{kPollTimeoutMs};
 
     explicit AccessAdapterBase(caf::actor_system &sys) : receiver_(sys)
     {
@@ -53,11 +53,26 @@ class AccessAdapterBase : public utils::CrtpBase<Derived>
     }
 
   protected:
-    fw::ScopedEo receiver_;
-
-    std::array<common::UserId, common::kMaxClientsPerAccess> connToUser_{};
-    std::array<common::ConnectionId, common::kMaxUsers> userToConn_{};
-    std::array<Connection, common::kMaxClientsPerAccess> connections_{};
+    auto &receiver()
+    {
+        return receiver_;
+    }
+    auto &connToUser()
+    {
+        return connToUser_;
+    }
+    auto &userToConn()
+    {
+        return userToConn_;
+    }
+    auto &connections()
+    {
+        return connections_;
+    }
+    auto &gatewayAddr()
+    {
+        return gatewayAddr_;
+    }
 
     template <typename Msg>
     void fillHead(Msg &msg)
@@ -72,7 +87,7 @@ class AccessAdapterBase : public utils::CrtpBase<Derived>
     template <typename Msg>
     void setUidInHead(Msg &msg, common::ConnectionId connId)
     {
-        auto uid = common::makeUid(connToUser_.at(connId), kAppType);
+        auto uid = common::makeUid(connToUser().at(connId), kAppType);
         msg.head.uid = uid;
     }
 
@@ -98,9 +113,12 @@ class AccessAdapterBase : public utils::CrtpBase<Derived>
         on<Msg>([this](Msg &msg) { this->getImplementation().handle(std::move(msg)); });
     }
 
-    fw::EoAddress gatewayAddr_;
-
   private:
+    fw::ScopedEo receiver_;
+    std::array<common::UserId, common::kMaxClientsPerAccess> connToUser_{};
+    std::array<common::ConnectionId, common::kMaxUsers> userToConn_{};
+    std::array<Connection, common::kMaxClientsPerAccess> connections_{};
+    fw::EoAddress gatewayAddr_;
     fw::MessageHandler messageHandler_;
 };
 

@@ -5,11 +5,12 @@
 #include "utils/JsonCoDec.hpp"
 
 #include <iostream>
+#include <utility>
 
 namespace DPlane::service
 {
-
-using namespace common::message;
+using AiChatServiceReq = common::message::AiChatServiceReq;
+using AiChatServiceResp = common::message::AiChatServiceResp;
 
 AiApiAdapter::AiApiAdapter(fw::EoConfig &cfg, std::string apiBaseUrl, std::string apiKey,
                            std::string defaultModel, fw::EoAddress routerAddr,
@@ -18,7 +19,7 @@ AiApiAdapter::AiApiAdapter(fw::EoConfig &cfg, std::string apiBaseUrl, std::strin
       defaultModel_(std::move(defaultModel)), routerAddr_(std::move(routerAddr)),
       serviceMgrAddr_(std::move(serviceMgrAddr))
 {
-    sendTo(serviceGatewayAddr, common::message::TempConfig{10});
+    sendTo(std::move(serviceGatewayAddr), common::message::TempConfig{10});
     sendTo(serviceMgrAddr_, common::message::TempConfig{11});
 }
 

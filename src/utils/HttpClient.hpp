@@ -5,6 +5,7 @@
 
 #pragma once
 
+#include <cstdint>
 #include <string>
 #include <string_view>
 
@@ -18,8 +19,8 @@ class HttpClient
 
     struct Response
     {
-        long httpCode = 0; // HTTP 状态码；<0 = curl 层错误
-        std::string body;  // 成功时=响应体，失败时=已格式化的错误信息
+        int64_t httpCode = 0; // HTTP 状态码；<0 = curl 层错误
+        std::string body;     // 成功时=响应体，失败时=已格式化的错误信息
 
         bool isSuccess() const
         {
@@ -37,7 +38,7 @@ class HttpClient
     // 返回 Response{httpCode, body}。调用者根据 httpCode 判断成功/失败。
     // 此方法阻塞当前线程直到请求完成或超时。
     static Response postJson(std::string_view url, std::string_view jsonBody,
-                             std::string_view authToken, long timeoutSec = 60);
+                             std::string_view authToken, int64_t timeoutSec = 60);
 };
 
 } // namespace utils

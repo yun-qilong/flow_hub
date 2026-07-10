@@ -40,3 +40,4 @@ scripts/gerrit-ci-watcher.service
 
 # Build artifacts
 compile_commands.json
+tidy-report.html

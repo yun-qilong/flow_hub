@@ -4,30 +4,32 @@
 #pragma once
 
 #include "fw/EoBase.hpp"
-#include "utils/Result.hpp"
 
 namespace CPlane
 {
-
+using EoConfig = fw::EoConfig;
+using EoAddress = fw::EoAddress;
+using InternalPong = common::message::InternalPong;
+using TempConfig = common::message::TempConfig;
 class BusinessMgr : public fw::EoBase<BusinessMgr>
 {
   public:
-    explicit BusinessMgr(fw::EoConfig &cfg, fw::EoAddress sessionMgrAddr);
+    explicit BusinessMgr(EoConfig &cfg, EoAddress sessionMgrAddress);
 
-    void handle(const common::message::InternalPong &msg);
-    void handle(const common::message::TempConfig &msg);
+    void handle(const InternalPong &msg);
+    void handle(const TempConfig &msg);
 
   protected:
     void init() override
     {
-        onMsg<common::message::TempConfig>();
-        onMsg<common::message::InternalPong>();
+        onMsg<TempConfig>();
+        onMsg<InternalPong>();
     }
 
   private:
-    fw::EoAddress sessionMgrAddr_;
-    fw::EoAddress routerAddr_;
-    fw::EoAddress serviceMgrAddr_;
+    EoAddress sessionMgrAddr;
+    EoAddress routerAddr;
+    EoAddress serviceMgrAddr;
 };
 
 } // namespace CPlane

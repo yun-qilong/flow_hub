@@ -3,7 +3,7 @@
 namespace userAccess
 {
 
-AccessGateway::AccessGateway(fw::EoConfig &cfg, fw::EoAddress cliAdapter)
+AccessGateway::AccessGateway(fw::EoConfig &cfg, const fw::EoAddress &cliAdapter)
     : fw::EoBase<AccessGateway>(cfg)
 {
     adapterTable_.at(static_cast<size_t>(common::AccessType::AiChatCLI)) = cliAdapter;

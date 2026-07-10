@@ -6,25 +6,21 @@
 
 namespace CPlane
 {
-
-using namespace fw;
-using namespace common::message;
-
-BusinessMgr::BusinessMgr(EoConfig &cfg, fw::EoAddress sessionMgrAddr)
-    : EoBase<BusinessMgr>(cfg), sessionMgrAddr_(std::move(sessionMgrAddr))
+BusinessMgr::BusinessMgr(EoConfig &cfg, EoAddress sessionMgrAddress)
+    : EoBase<BusinessMgr>(cfg), sessionMgrAddr(std::move(sessionMgrAddress))
 {
-    sendTo(sessionMgrAddr_, common::message::TempConfig{4});
+    sendTo(sessionMgrAddr, TempConfig{4});
 }
 
-void BusinessMgr::handle(const common::message::TempConfig &msg)
+void BusinessMgr::handle(const TempConfig &msg)
 {
     if (msg.tag == 5)
     {
-        routerAddr_ = senderAddress();
+        routerAddr = senderAddress();
     }
     else if (msg.tag == 7)
     {
-        serviceMgrAddr_ = senderAddress();
+        serviceMgrAddr = senderAddress();
     }
 }
 

@@ -227,7 +227,7 @@ void CliAdapter::sendRegister(const std::string &username)
     req.username = username;
     req.connectionId = kConnectionId;
     waiting_ = true;
-    fw::anonSendTo(gatewayAddr_, std::move(req));
+    fw::anonSendTo(gatewayAddr(), std::move(req));
 }
 
 void CliAdapter::sendLogin(const std::string &username)
@@ -237,7 +237,7 @@ void CliAdapter::sendLogin(const std::string &username)
     req.username = username;
     req.connectionId = kConnectionId;
     waiting_ = true;
-    fw::anonSendTo(gatewayAddr_, std::move(req));
+    fw::anonSendTo(gatewayAddr(), std::move(req));
 }
 
 void CliAdapter::sendLogout()
@@ -252,7 +252,7 @@ void CliAdapter::sendLogout()
     fillHead(req);
     req.head.uid = currentUid_;
     waiting_ = true;
-    fw::anonSendTo(gatewayAddr_, std::move(req));
+    fw::anonSendTo(gatewayAddr(), std::move(req));
 }
 
 void CliAdapter::sendDelete()
@@ -261,7 +261,7 @@ void CliAdapter::sendDelete()
     fillHead(req);
     req.head.uid = currentUid_;
     waiting_ = true;
-    fw::anonSendTo(gatewayAddr_, std::move(req));
+    fw::anonSendTo(gatewayAddr(), std::move(req));
 }
 
 void CliAdapter::sendTaskCreate()
@@ -271,7 +271,7 @@ void CliAdapter::sendTaskCreate()
     req.head.uid = currentUid_;
     req.taskType = common::TaskType::AiChat;
     waiting_ = true;
-    fw::anonSendTo(gatewayAddr_, std::move(req));
+    fw::anonSendTo(gatewayAddr(), std::move(req));
 }
 
 void CliAdapter::sendChatMessage(const std::string &content)
@@ -282,7 +282,7 @@ void CliAdapter::sendChatMessage(const std::string &content)
     req.head.gtidList = {currentGtid_};
     req.content = content;
     waiting_ = true;
-    fw::anonSendTo(gatewayAddr_, std::move(req));
+    fw::anonSendTo(gatewayAddr(), std::move(req));
     showPrompt();
 }
 
@@ -321,7 +321,7 @@ void CliAdapter::resetState()
 
 void CliAdapter::handle(const common::message::TempConfig & /*cfg*/)
 {
-    gatewayAddr_ = receiver_.senderAddress();
+    gatewayAddr() = receiver().senderAddress();
 }
 
 void CliAdapter::handle(const common::message::AiChatBusinessResp &resp)
@@ -363,8 +363,8 @@ void CliAdapter::handle(const common::message::UserLoginResp &resp)
         currentUsername_ = resp.username;
         currentUid_ = resp.head.uid;
         auto userId = common::getUserId(resp.head.uid);
-        userToConn_.at(userId) = kConnectionId;
-        connToUser_.at(kConnectionId) = userId;
+        userToConn().at(userId) = kConnectionId;
+        connToUser().at(kConnectionId) = userId;
         std::cout << "Logged in as '" << currentUsername_ << "'.\n";
         sendTaskCreate();
     }
@@ -382,8 +382,8 @@ void CliAdapter::handle(const common::message::UserLogoutResp &resp)
     if (resp.success)
     {
         auto userId = common::getUserId(currentUid_);
-        userToConn_.at(userId) = common::kInvalidConnectionId;
-        connToUser_.at(kConnectionId) = common::kInvalidUserId;
+        userToConn().at(userId) = common::kInvalidConnectionId;
+        connToUser().at(kConnectionId) = common::kInvalidUserId;
         std::cout << "Logged out.\n";
         resetState();
     }

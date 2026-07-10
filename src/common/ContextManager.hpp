@@ -63,7 +63,7 @@ template <typename Ctx, size_t Capacity>
     int idx = bitmap_.allocate();
     if (idx >= 0)
     {
-        contexts_[static_cast<size_t>(idx)].clear();
+        contexts_.at(static_cast<size_t>(idx)).clear();
     }
     return idx;
 }

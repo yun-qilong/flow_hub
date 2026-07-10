@@ -1,5 +1,5 @@
 #include "common/TaskPool.hpp"
-#include "DPlane/session/SessionMgr.hpp"
+#include "CPlane/SessionMgr.hpp"
 #include "fw/EoTestBase.hpp"
 
 #include <gtest/gtest.h>
@@ -21,8 +21,8 @@ class TestSessionMgr : public fw::EoTestBase
         trackStub(sessionData_);
         trackStub(businessMgr_);
 
-        testee_ = spawn<DPlane::session::SessionMgr>(pool_, stubAddress(accessGateway_),
-                                                     stubAddress(sessionData_));
+        testee_ = spawn<CPlane::SessionMgr>(pool_, stubAddress(accessGateway_),
+                                            stubAddress(sessionData_));
 
         checkOutput<TempConfig>(accessGateway_, [](TempConfig &msg) { EXPECT_EQ(msg.tag, 1); });
         sendToMeFrom(businessMgr_, testee_, TempConfig{4});

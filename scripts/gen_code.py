@@ -84,6 +84,9 @@ ARRAY_RE = re.compile(r"^(\w+)(?:<[^>]+>)?\[(\d+)\]$")
 # Set of enum type names (populated during parsing)
 ENUM_TYPES: set[str] = set()
 
+# Set of define names (populated during type/ parsing)
+DEFINE_NAMES: set[str] = set()
+
 # Constant values extracted from Constants.hpp (name → integer value)
 CONSTANT_VALUES: dict[str, int] = {}
 
@@ -586,8 +589,8 @@ def resolve_type_entry(mt_type_raw: str) -> tuple[str, str] | None:
         for a in arg_parts:
             if a.isdigit() or (a.startswith("-") and a[1:].isdigit()):
                 resolved_args.append(a)
-            elif a in CONSTANT_VALUES:
-                resolved_args.append(str(CONSTANT_VALUES[a]))
+            elif a in DEFINE_NAMES or a in CONSTANT_VALUES:
+                resolved_args.append(a)
             else:
                 targ_entry = resolve_type_entry(a)
                 resolved_args.append(targ_entry[0] if targ_entry else a)
@@ -615,6 +618,7 @@ def field_includes(fields: list, known_types: dict[str, str] | None = None) -> l
     """Collect #include lines needed by field types (standard types only)."""
     incs: set[str] = set()
     caf_incs: set[str] = set()
+    needs_constants = False
     for ftype_raw, _ in fields:
         if ftype_raw == "__padding__":
             continue
@@ -628,7 +632,15 @@ def field_includes(fields: list, known_types: dict[str, str] | None = None) -> l
         m = TYPE_NAME_RE.match(ftype_raw)
         if m and m.group(1) in CAF_INSPECT_INCLUDES:
             caf_incs.add(CAF_INSPECT_INCLUDES[m.group(1)])
-    return sorted(incs) + sorted(caf_incs)
+        if m and m.group(2):
+            for a in m.group(2).split(","):
+                a = a.strip()
+                if a in CONSTANT_VALUES:
+                    needs_constants = True
+    result = sorted(incs) + sorted(caf_incs)
+    if needs_constants:
+        result.append('"common/Constants.hpp"')
+    return result
 
 
 def _to_string_scalar(mt_type: str, access_expr: str,
@@ -1097,7 +1109,8 @@ def main() -> int:
             defines, enums = parse_type_file(mtf)
             for name, entry in defines.items():
                 all_defines[name] = entry
-                TYPE_MAP[name] = entry  # 同步到全局 TYPE_MAP，供后续字段解析使用
+                TYPE_MAP[name] = entry
+                DEFINE_NAMES.add(name)
             for e in enums:
                 all_enums.append(e)
                 ENUM_TYPES.add(e["name"])

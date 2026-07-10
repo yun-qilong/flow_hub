@@ -1,4 +1,4 @@
-HeaderFilterRegex: '.*/flowHub[^/]*/src/(common|fw|DPlane|CPlane|access|utils|generated)/.*\.(hpp|cpp)$'
+HeaderFilterRegex: '.*/flowHub[^/]*/src/(common|fw|DPlane|CPlane|access|userAccess|utils|generated)/.*\.(hpp|cpp)$'
 
 Checks: >
   -*,
@@ -14,6 +14,7 @@ Checks: >
   -cppcoreguidelines-special-member-functions,
   google-*,
   -google-readability-todo,
+  -google-readability-avoid-underscore-in-googletest-name,
   -google-runtime-references,
   modernize-*,
   -modernize-use-trailing-return-type,
@@ -22,7 +23,7 @@ Checks: >
   readability-*,
   -readability-magic-numbers,
   -readability-identifier-length,
-  -readability-function-cognitive-complexity,
+
   misc-*,
   -misc-non-private-member-variables-in-classes,
   -misc-include-cleaner
@@ -56,3 +57,7 @@ CheckOptions:
     value: ""
   - key: readability-implicit-bool-conversion.AllowIntegerConditions
     value: true
+  - key: readability-function-size.LineThreshold
+    value: 30
+  - key: readability-function-cognitive-complexity.Threshold
+    value: 7

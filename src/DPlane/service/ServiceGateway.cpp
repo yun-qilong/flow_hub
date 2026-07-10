@@ -3,18 +3,17 @@
 #include "DPlane/service/ServiceGateway.hpp"
 
 #include <iostream>
+#include <utility>
 
 namespace DPlane::service
 {
-
-using namespace common::message;
 
 ServiceGateway::ServiceGateway(fw::EoConfig &cfg, fw::EoAddress serviceMgrAddr,
                                fw::EoAddress aiChatBusAddr)
     : fw::EoBase<ServiceGateway>(cfg)
 {
-    sendTo(serviceMgrAddr, common::message::TempConfig{8});
-    sendTo(aiChatBusAddr, common::message::TempConfig{9});
+    sendTo(std::move(serviceMgrAddr), common::message::TempConfig{8});
+    sendTo(std::move(aiChatBusAddr), common::message::TempConfig{9});
 }
 
 void ServiceGateway::handle(const common::message::TempConfig &msg)

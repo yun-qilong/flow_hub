@@ -56,8 +56,7 @@ class AiChatBus : public fw::EoBase<AiChatBus<T>>
   private:
     void processServiceRequest(ContextType &ctx, const common::message::AiChatBusinessReq &req,
                                uint16_t gtid);
-    void processBusinessResp(ContextType &ctx, const common::message::AiChatServiceResp &resp,
-                             uint16_t gtid);
+    void processBusinessResp(ContextType &ctx, const common::message::AiChatServiceResp &resp);
     std::string buildMessagesJson(const ContextType &ctx, const std::string &content) const;
     void writeMessagesToContext(ContextType &ctx, const std::string &body);
     uint16_t allocateAndRecordSeq(ContextType &ctx);

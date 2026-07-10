@@ -54,11 +54,11 @@ class StaticBitMap
     {
         if constexpr (BitCount == sizeof(StorageType) * 8)
         {
-            return ~StorageType(0);
+            return ~static_cast<StorageType>(0);
         }
         else
         {
-            return (StorageType(1) << BitCount) - 1;
+            return (static_cast<StorageType>(1) << BitCount) - 1;
         }
     }();
 
@@ -83,18 +83,18 @@ class StaticBitMap
         uint64_t validPositions =
             (~static_cast<uint64_t>(mask_)) & static_cast<uint64_t>(kFullMask);
         int idx = __builtin_ctzll(validPositions);
-        mask_ |= static_cast<StorageType>(StorageType(1) << idx);
+        mask_ |= static_cast<StorageType>(static_cast<StorageType>(1) << idx);
         return idx;
     }
 
     void deallocate(int idx) noexcept
     {
-        mask_ &= ~(static_cast<StorageType>(StorageType(1) << idx));
+        mask_ &= ~(static_cast<StorageType>(static_cast<StorageType>(1) << idx));
     }
 
     [[nodiscard]] bool isUsed(int idx) const noexcept
     {
-        return (mask_ >> idx) & StorageType(1);
+        return (mask_ >> idx) & static_cast<StorageType>(1);
     }
 
     [[nodiscard]] int countFree() const noexcept
@@ -114,7 +114,7 @@ class StaticBitMap
 
     void markUsed(int idx) noexcept
     {
-        mask_ |= static_cast<StorageType>(StorageType(1) << idx);
+        mask_ |= static_cast<StorageType>(static_cast<StorageType>(1) << idx);
     }
 
     [[nodiscard]] int firstFree() const noexcept

@@ -5,7 +5,6 @@
 namespace DPlane::service
 {
 
-using namespace common::message;
 
 ServiceMgr::ServiceMgr(fw::EoConfig &cfg, fw::EoAddress businessMgrAddr)
     : fw::EoBase<ServiceMgr>(cfg), businessMgrAddr_(std::move(businessMgrAddr))

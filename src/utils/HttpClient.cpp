@@ -20,7 +20,7 @@ static size_t writeCallback(void *ptr, size_t size, size_t nmemb, void *userdata
 
 // ===== postJson =====
 HttpClient::Response HttpClient::postJson(std::string_view url, std::string_view jsonBody,
-                                          std::string_view authToken, long timeoutSec)
+                                          std::string_view authToken, int64_t timeoutSec)
 {
     Response resp;
 
@@ -45,7 +45,7 @@ HttpClient::Response HttpClient::postJson(std::string_view url, std::string_view
 
     curl_easy_setopt(curl, CURLOPT_URL, urlStr.c_str());
     curl_easy_setopt(curl, CURLOPT_POSTFIELDS, bodyStr.c_str());
-    curl_easy_setopt(curl, CURLOPT_POSTFIELDSIZE, static_cast<long>(bodyStr.size()));
+    curl_easy_setopt(curl, CURLOPT_POSTFIELDSIZE, static_cast<int64_t>(bodyStr.size()));
     curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
     curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, writeCallback);
     curl_easy_setopt(curl, CURLOPT_WRITEDATA, &resp.body);
@@ -65,7 +65,7 @@ HttpClient::Response HttpClient::postJson(std::string_view url, std::string_view
     }
     else
     {
-        resp.httpCode = -static_cast<long>(res);
+        resp.httpCode = -static_cast<int64_t>(res);
         resp.body = std::string("curl error: ") + curl_easy_strerror(res);
     }
 

@@ -42,7 +42,7 @@ class Router : public fw::EoBase<Router>
 
     fw::EoAddress getTargetEoAddress(uint16_t gtid) const
     {
-        return routeTable_[gtid >> 6];
+        return routeTable_.at(gtid >> 6);
     }
 
     template <typename Msg>
