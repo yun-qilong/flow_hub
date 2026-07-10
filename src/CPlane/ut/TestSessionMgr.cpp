@@ -345,7 +345,8 @@ TEST_F(TestSessionMgr, CheckHandleSessionLifecycle)
         lo.head.accessType = kReqAccessType;
         sendToMe(std::move(lo));
         checkOutputAndReply<UserLogoutSessionReq, UserLogoutSessionResp>(
-            sessionData_, [&](UserLogoutSessionReq &msg)
+            sessionData_,
+            [&](UserLogoutSessionReq &msg)
             { checkHeadFields(msg.head, kUserUid, kReqAccessType, kReqAppType, {}, 0); },
             [&]()
             {
