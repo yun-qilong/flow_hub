@@ -15,7 +15,7 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y libcurl4-openssl-dev python3 clang-format-15 clang-tidy
+          sudo apt-get install -y libcurl4-openssl-dev python3 clang-format-15 clang-tidy-14
 
       - name: Build
         run: |
