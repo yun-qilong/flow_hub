@@ -1,0 +1,77 @@
+#include "DPlane/service/AiApiAdapter.hpp"
+#include "fw/EoTestBase.hpp"
+
+#include <gtest/gtest.h>
+
+namespace
+{
+
+using namespace common::message;
+
+class TestAiApiAdapter : public fw::EoTestBase
+{
+  protected:
+    void SetUp() override
+    {
+        routerStub_ = makeStub();
+        serviceMgrStub_ = makeStub();
+        serviceGatewayStub_ = makeStub();
+
+        trackStub(routerStub_);
+        trackStub(serviceMgrStub_);
+        trackStub(serviceGatewayStub_);
+
+        testee_ = spawn<DPlane::service::AiApiAdapter>(
+            "http://127.0.0.1:1", "fake-key", "gpt-4", stubAddress(routerStub_),
+            stubAddress(serviceMgrStub_), stubAddress(serviceGatewayStub_));
+
+        checkOutput<TempConfig>(serviceGatewayStub_,
+                                [](TempConfig &msg) { EXPECT_EQ(msg.tag, 10); });
+        checkOutput<TempConfig>(serviceMgrStub_, [](TempConfig &msg) { EXPECT_EQ(msg.tag, 11); });
+    }
+
+    template <typename M>
+    void fillHead(M &msg)
+    {
+        msg.head.uid = kDefaultUid;
+        msg.head.accessType = kDefaultAccessType;
+        msg.head.appType = kDefaultAppType;
+        msg.head.sessionFlags = {};
+    }
+
+    Stub routerStub_;
+    Stub serviceMgrStub_;
+    Stub serviceGatewayStub_;
+};
+
+TEST_F(TestAiApiAdapter, CheckHandleAiChatServiceReq_SendsRespOnHttpFailure)
+{
+    AiChatServiceReq req;
+    fillHead(req);
+    req.messagesJson = "[]";
+    req.modelName = "gpt-4";
+    sendToMe(std::move(req));
+
+    checkOutput<AiChatServiceResp>(routerStub_,
+                                   [](AiChatServiceResp &msg) { EXPECT_FALSE(msg.success); });
+}
+
+TEST_F(TestAiApiAdapter, CheckHandleAiChatServiceReq_RouterNotSet)
+{
+    auto adapter = spawn<DPlane::service::AiApiAdapter>(
+        "http://127.0.0.1:1", "fake-key", "gpt-4", fw::EoAddress{}, stubAddress(serviceMgrStub_),
+        stubAddress(serviceGatewayStub_));
+
+    checkOutput<TempConfig>(serviceGatewayStub_, [](TempConfig &msg) { EXPECT_EQ(msg.tag, 10); });
+    checkOutput<TempConfig>(serviceMgrStub_, [](TempConfig &msg) { EXPECT_EQ(msg.tag, 11); });
+
+    AiChatServiceReq req;
+    fillHead(req);
+    req.messagesJson = "[]";
+    req.modelName = "gpt-4";
+    sendToMeFrom(stubEo_, adapter, std::move(req));
+
+    stopActor(adapter);
+}
+
+} // namespace
