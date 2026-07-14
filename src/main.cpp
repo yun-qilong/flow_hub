@@ -61,9 +61,7 @@ int main()
         model = "mimo-v2.5";
     }
 
-    std::cout << "FlowHub v0.2.0 — AI Chat\n"
-              << "  API: " << apiUrl << "\n"
-              << "  Model: " << (model ? model : "(default)") << "\n";
+    LG_INFO("FlowHub v0.2.0 — AI Chat  API: %s  Model: %s", apiUrl, model);
 
     // ===== 1. 创建所有 EO（按分层顺序：Access → Session → Business → Service）=====
 
@@ -98,6 +96,6 @@ int main()
     cliAdapter.showPrompt();
     cliAdapter.run();
 
-    std::cout << "\n[main] goodbye.\n";
+    LG_INFO("[main] goodbye.");
     return 0;
 }

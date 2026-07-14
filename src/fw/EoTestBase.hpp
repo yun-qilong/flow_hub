@@ -1,6 +1,7 @@
 #pragma once
 
 #include "fw/EoEnv.hpp"
+#include "utils/SysLog.hpp"
 
 #include <gtest/gtest.h>
 
@@ -52,7 +53,10 @@ class EoTestBase : public ::testing::Test
     Actor testee_{};
     std::vector<Stub *> trackedStubs_{&stubEo_};
 
-    EoTestBase() : stubEo_(env_.system()) {}
+    EoTestBase() : stubEo_(env_.system())
+    {
+        utils::gSysLog() = &mockSysLog_;
+    }
 
     auto &system()
     {
@@ -80,6 +84,10 @@ class EoTestBase : public ::testing::Test
         stopActor(testee_);
         verifyAllStubsEmpty();
     }
+
+    // ---- SysLog mock (shared across all EoTestBase fixtures) ----
+
+    testing::StrictMock<utils::MockSysLog> mockSysLog_;
 
     // ---- Head field defaults (shared across all EO tests) ----
 

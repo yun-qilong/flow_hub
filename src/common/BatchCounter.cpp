@@ -1,6 +1,5 @@
 #include "common/BatchCounter.hpp"
-
-#include <iostream>
+#include "utils/SysLog.hpp"
 
 namespace common
 {
@@ -37,7 +36,7 @@ void BatchCounter::reapTimeoutCounters()
         auto i = static_cast<size_t>(__builtin_ctz(bitmap));
         if (isTimeout(i))
         {
-            std::cerr << "[BatchCounter] WARNING: counter index=" << i << " timed out, releasing\n";
+            LG_WRN("counter index=%zu timed out, releasing", i);
             counters_.at(i).remaining = 0;
             activeBitmap_ &= ~(1U << i);
         }
@@ -49,15 +48,14 @@ bool BatchCounter::replyAndCheckDone(BatchToken token)
 {
     if (not isActive(token.index))
     {
-        std::cerr << "[BatchCounter] WARNING: reply on inactive index=" << token.index
-                  << " epoch=" << token.epoch << "\n";
+        LG_WRN("reply on inactive index=%zu epoch=%u", token.index, token.epoch);
         return false;
     }
     auto &c = counters_.at(token.index);
     if (c.epoch != token.epoch)
     {
-        std::cerr << "[BatchCounter] WARNING: reply on stale token index=" << token.index
-                  << " epoch=" << token.epoch << " (current=" << c.epoch << ")\n";
+        LG_WRN("reply on stale token index=%zu epoch=%u (current=%u)", token.index, token.epoch,
+               c.epoch);
         return false;
     }
     --c.remaining;

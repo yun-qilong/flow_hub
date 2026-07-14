@@ -2,7 +2,6 @@
 
 #include "DPlane/service/ServiceGateway.hpp"
 
-#include <iostream>
 #include <utility>
 
 namespace DPlane::service
@@ -26,13 +25,12 @@ void ServiceGateway::handle(const common::message::TempConfig &msg)
 
 void ServiceGateway::handle(common::message::AiChatServiceReq req)
 {
-    std::cout << "[ServiceGateway] >>> AiChatServiceReq"
-              << " model=" << req.modelName << " temp=" << req.temperature
-              << " msgSize=" << req.messagesJson.size() << "B\n";
+    LG_DBG(">>> AiChatServiceReq model=%s temp=%.1f msgSize=%zuB", req.modelName.c_str(),
+           req.temperature, req.messagesJson.size());
 
     if (not aiApiAdapter_)
     {
-        std::cerr << "[ServiceGateway] ERROR: adapterAddr not set\n";
+        LG_ERR("adapterAddr not set");
         return;
     }
 

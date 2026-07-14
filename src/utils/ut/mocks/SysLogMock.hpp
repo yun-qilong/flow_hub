@@ -25,3 +25,11 @@ inline MockSysLog *&gSysLog()
 }
 
 } // namespace utils
+
+// ===== Convenience macros for UT EXPECT_CALL =====
+
+#define EXPECT_LOG(level, times)                                                                   \
+    EXPECT_CALL(*::utils::gSysLog(), log((level), ::testing::_)).Times(times)
+
+#define EXPECT_LOG_FEAT(feat, times)                                                               \
+    EXPECT_CALL(*::utils::gSysLog(), logFeature((feat), ::testing::_)).Times(times)

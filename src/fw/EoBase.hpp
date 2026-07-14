@@ -13,8 +13,8 @@
 #include "fw/EoEnv.hpp"
 #include "fw/EoTypes.hpp"
 #include "utils/CrtpBase.hpp"
+#include "utils/SysLog.hpp"
 
-#include <iostream>
 #include <type_traits>
 #include <utility>
 
@@ -60,7 +60,7 @@ class EoBase : public caf::event_based_actor, public utils::CrtpBase<Derived>
     template <typename Msg>
     void handle(const Msg & /*msg*/)
     {
-        std::cerr << "[WARNING] Unhandled message type: " << typeid(Msg).name() << std::endl;
+        LG_WRN("Unhandled message type: %s", typeid(Msg).name());
     }
 
     // ----- shorthand registration ------------------------------------

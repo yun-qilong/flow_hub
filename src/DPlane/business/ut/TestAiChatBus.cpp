@@ -10,6 +10,8 @@ namespace
 {
 
 using namespace common::message;
+using utils::LogFeature;
+using utils::LogLevel;
 using AiChatBus = DPlane::business::AiChatBus<common::TaskType::AiChat>;
 using AiChatContext = common::context::AiChatContext;
 
@@ -73,6 +75,8 @@ TEST_F(TestAiChatBus, CheckHandleAiChatBusinessReq_FullFlow)
 {
     registerServiceGateway();
 
+    EXPECT_LOG_FEAT(LogFeature::AICHAT, 3);
+
     AiChatBusinessReq req;
     fillHead(req, gtid_);
     req.content = "hello";
@@ -97,6 +101,9 @@ TEST_F(TestAiChatBus, CheckHandleAiChatBusinessReq_FullFlow)
 
 TEST_F(TestAiChatBus, CheckHandleAiChatBusinessReq_NoContext)
 {
+    EXPECT_LOG_FEAT(LogFeature::AICHAT, 1);
+    EXPECT_LOG(LogLevel::ERR, 1);
+
     AiChatBusinessReq req;
     fillHead(req, static_cast<common::GTID>(0xFFFF));
     req.content = "hello";
@@ -105,6 +112,9 @@ TEST_F(TestAiChatBus, CheckHandleAiChatBusinessReq_NoContext)
 
 TEST_F(TestAiChatBus, CheckHandleAiChatBusinessReq_NoServiceGateway)
 {
+    EXPECT_LOG_FEAT(LogFeature::AICHAT, 2);
+    EXPECT_LOG(LogLevel::ERR, 1);
+
     AiChatBusinessReq req;
     fillHead(req, gtid_);
     req.content = "hello";
@@ -115,6 +125,8 @@ TEST_F(TestAiChatBus, CheckHandleAiChatBusinessReq_NoServiceGateway)
 
 TEST_F(TestAiChatBus, CheckHandleAiChatServiceResp_NormalResp)
 {
+    EXPECT_LOG_FEAT(LogFeature::AICHAT, 1);
+
     withCtx(
         [](AiChatContext &ctx)
         {
@@ -141,6 +153,9 @@ TEST_F(TestAiChatBus, CheckHandleAiChatServiceResp_NormalResp)
 
 TEST_F(TestAiChatBus, CheckHandleAiChatServiceResp_NoPendingReq)
 {
+    EXPECT_LOG_FEAT(LogFeature::AICHAT, 1);
+    EXPECT_LOG(LogLevel::ERR, 1);
+
     withCtx([](AiChatContext &ctx) { ctx.pendingReqSeq = 0; });
 
     AiChatServiceResp resp;
@@ -152,6 +167,9 @@ TEST_F(TestAiChatBus, CheckHandleAiChatServiceResp_NoPendingReq)
 
 TEST_F(TestAiChatBus, CheckHandleAiChatServiceResp_StaleSeq)
 {
+    EXPECT_LOG_FEAT(LogFeature::AICHAT, 1);
+    EXPECT_LOG(LogLevel::WRN, 1);
+
     withCtx([](AiChatContext &ctx) { ctx.pendingReqSeq = 5; });
 
     AiChatServiceResp resp;
@@ -163,6 +181,8 @@ TEST_F(TestAiChatBus, CheckHandleAiChatServiceResp_StaleSeq)
 
 TEST_F(TestAiChatBus, CheckHandleAiChatServiceResp_Failure)
 {
+    EXPECT_LOG_FEAT(LogFeature::AICHAT, 1);
+
     withCtx(
         [](AiChatContext &ctx)
         {

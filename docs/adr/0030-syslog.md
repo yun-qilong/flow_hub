@@ -98,6 +98,57 @@ LG_FEAT(AICHAT, "chat session created: uid=%d", uid);
   ```
 - 调用处**零认知复杂度**：`if constexpr` 和 `if (gSysLog)` 在 `doLog<T>` 模板内部，不计入调用函数
 - 性能无代价：`inline` 模板 + 编译期常量 → 内联后与手写 `if constexpr` 生成相同汇编
+
+### 6. UT 基础设施
+
+#### EoTestBase 自动初始化
+
+`EoTestBase` 构造函数中自动创建 `StrictMock<MockSysLog>` 并注册到 `gSysLog()`：
+
+```cpp
+class EoTestBase : public ::testing::Test
+{
+protected:
+    testing::StrictMock<utils::MockSysLog> mockSysLog_;
+
+    EoTestBase() : stubEo_(env_.system())
+    {
+        utils::gSysLog() = &mockSysLog_;
+    }
+};
+```
+
+- 所有 EO UT 自动获得 MockSysLog，无需手动初始化
+- **StrictMock**：未写 `EXPECT_CALL` 的日志调用会导致测试 FAIL，确保每条日志都被测试覆盖
+
+#### EXPECT_LOG 宏
+
+在 `SysLogMock.hpp` 中提供便捷宏，隐藏 `::testing::_` 和 `.Times()` 样板：
+
+```cpp
+#define EXPECT_LOG(level, times)                                                                   \
+    EXPECT_CALL(*::utils::gSysLog(), log((level), ::testing::_)).Times(times)
+
+#define EXPECT_LOG_FEAT(feat, times)                                                               \
+    EXPECT_CALL(*::utils::gSysLog(), logFeature((feat), ::testing::_)).Times(times)
+```
+
+UT 中的使用：
+
+```cpp
+TEST_F(TestRouter, CheckRouteAndForward_EmptyGtidList)
+{
+    EXPECT_LOG(LogLevel::DBG, 1);
+    EXPECT_LOG(LogLevel::ERR, 1);
+
+    AiChatServiceResp resp;
+    fillHead(resp, {});
+    sendToMe(std::move(resp));
+}
+```
+
+- 只验证日志等级 + 调用次数，不验证消息内容
+- 无 `mockSysLog_`、`::testing::_`、`.Times()` 样板
 - 关闭的等级：`doLog` 函数体为空 → 内联后零指令
 - Feature 过滤：`doLogFeat<F>` 不在白名单 → 函数体为空 → 零指令
 

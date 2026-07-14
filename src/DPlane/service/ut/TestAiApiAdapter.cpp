@@ -7,6 +7,7 @@ namespace
 {
 
 using namespace common::message;
+using utils::LogLevel;
 
 class TestAiApiAdapter : public fw::EoTestBase
 {
@@ -46,6 +47,8 @@ class TestAiApiAdapter : public fw::EoTestBase
 
 TEST_F(TestAiApiAdapter, CheckHandleAiChatServiceReq_SendsRespOnHttpFailure)
 {
+    EXPECT_LOG(LogLevel::DBG, 2);
+
     AiChatServiceReq req;
     fillHead(req);
     req.messagesJson = "[]";
@@ -64,6 +67,9 @@ TEST_F(TestAiApiAdapter, CheckHandleAiChatServiceReq_RouterNotSet)
 
     checkOutput<TempConfig>(serviceGatewayStub_, [](TempConfig &msg) { EXPECT_EQ(msg.tag, 10); });
     checkOutput<TempConfig>(serviceMgrStub_, [](TempConfig &msg) { EXPECT_EQ(msg.tag, 11); });
+
+    EXPECT_LOG(LogLevel::DBG, 2);
+    EXPECT_LOG(LogLevel::WRN, 1);
 
     AiChatServiceReq req;
     fillHead(req);

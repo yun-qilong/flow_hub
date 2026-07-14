@@ -7,6 +7,7 @@ namespace
 {
 
 using namespace common::message;
+using utils::LogLevel;
 
 constexpr uint16_t kSeqMsgAck = 42;
 
@@ -79,6 +80,8 @@ class TestSessionData : public fw::EoTestBase
 
 TEST_F(TestSessionData, CheckHandleAiChatBusinessReq_ForwardToRouter)
 {
+    EXPECT_LOG(LogLevel::DBG, 1);
+
     auto req = AiChatBusinessReq{};
     fillDefaultHead(req);
     req.content = "test";
@@ -97,6 +100,9 @@ TEST_F(TestSessionData, CheckHandleAiChatBusinessReq_RouterNotSet)
 {
     restartWithoutRouter();
 
+    EXPECT_LOG(LogLevel::DBG, 1);
+    EXPECT_LOG(LogLevel::ERR, 1);
+
     auto req = AiChatBusinessReq{};
     fillDefaultHead(req);
     req.content = "should_drop";
@@ -105,6 +111,8 @@ TEST_F(TestSessionData, CheckHandleAiChatBusinessReq_RouterNotSet)
 
 TEST_F(TestSessionData, CheckHandleAiChatBusinessResp_ForwardToAccessGateway)
 {
+    EXPECT_LOG(LogLevel::DBG, 4);
+
     constexpr uint64_t kAccessBits = 0x1A;
     setAccessBit(kDefaultUid, kAccessBits);
 
@@ -127,6 +135,8 @@ TEST_F(TestSessionData, CheckHandleAiChatBusinessResp_ForwardToAccessGateway)
 
 TEST_F(TestSessionData, CheckHandleAiChatMsgAck_ForwardToAccessGateway)
 {
+    EXPECT_LOG(LogLevel::DBG, 3);
+
     constexpr uint64_t kAccessBits = 0x05;
     setAccessBit(kDefaultUid, kAccessBits);
 
@@ -148,6 +158,8 @@ TEST_F(TestSessionData, CheckHandleAiChatMsgAck_ForwardToAccessGateway)
 
 TEST_F(TestSessionData, CheckHandleUserLoginSessionReq_ReplyToSender)
 {
+    EXPECT_LOG(LogLevel::DBG, 1);
+
     auto req = UserLoginSessionReq{};
     fillDefaultHead(req);
     req.head.accessType = static_cast<common::AccessType>(3);
@@ -165,6 +177,8 @@ TEST_F(TestSessionData, CheckHandleUserLoginSessionReq_ReplyToSender)
 
 TEST_F(TestSessionData, CheckHandleUserRegisterSessionReq_ClearsAccessBits)
 {
+    EXPECT_LOG(LogLevel::DBG, 4);
+
     setAccessBit(kDefaultUid, (1ULL << 3) | (1ULL << 5));
 
     auto regReq = UserRegisterSessionReq{};
@@ -187,6 +201,8 @@ TEST_F(TestSessionData, CheckHandleUserRegisterSessionReq_ClearsAccessBits)
 
 TEST_F(TestSessionData, CheckHandleTaskDeleteSessionReq_ForwardTaskSyncToAccessGateway)
 {
+    EXPECT_LOG(LogLevel::DBG, 3);
+
     constexpr uint64_t kAccessBits = 0x0C;
     setAccessBit(kDefaultUid, kAccessBits);
 
@@ -206,6 +222,8 @@ TEST_F(TestSessionData, CheckHandleTaskDeleteSessionReq_ForwardTaskSyncToAccessG
 
 TEST_F(TestSessionData, CheckHandleTaskDeleteSessionReq_EmptyGtidList)
 {
+    EXPECT_LOG(LogLevel::ERR, 1);
+
     auto req = TaskDeleteSessionReq{};
     fillDefaultHead(req);
     req.head.gtidList.clear();
@@ -214,6 +232,8 @@ TEST_F(TestSessionData, CheckHandleTaskDeleteSessionReq_EmptyGtidList)
 
 TEST_F(TestSessionData, CheckHandleUserLogoutSessionReq_ReplyToSender)
 {
+    EXPECT_LOG(LogLevel::DBG, 4);
+
     setAccessBit(kDefaultUid, 1ULL << 3);
     setAccessBit(kDefaultUid, 1ULL << 5);
 

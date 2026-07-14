@@ -5,7 +5,6 @@
 #include "utils/JsonCoDec.hpp"
 
 #include <cstring>
-#include <iostream>
 
 namespace DPlane::business
 {
@@ -47,33 +46,25 @@ void AiChatBus<T>::handle(const common::message::TempConfig &msg)
 template <common::TaskType T>
 void AiChatBus<T>::handle(const AiChatBusinessReq &req)
 {
-    auto gtid = req.head.gtidList[0];
-    std::cout << "[AiChatBus] received AiChatBusinessReq: gtid=0x" << std::hex << gtid << std::dec
-              << " contentSize=" << req.content.size() << "B\n";
+    auto gtid = req.head.gtidList.at(0);
+    LG_FEAT(AICHAT, "received AiChatBusinessReq: gtid=0x%x contentSize=%zuB", gtid,
+            req.content.size());
 
     pool_.getContext<ContextType>(gtid).useOrFailed(
         [&](ContextType &ctx) { processServiceRequest(ctx, req, gtid); },
-        [gtid]()
-        {
-            std::cerr << "[AiChatBus] ERROR: no context for gtid=0x" << std::hex << gtid << std::dec
-                      << "\n";
-        });
+        [gtid]() { LG_ERR("no context for gtid=0x%x", gtid); });
 }
 
 template <common::TaskType T>
 void AiChatBus<T>::handle(const AiChatServiceResp &resp)
 {
-    auto gtid = resp.head.gtidList[0];
-    std::cout << "[AiChatBus] received AiChatServiceResp: gtid=0x" << std::hex << gtid << std::dec
-              << " contentSize=" << resp.content.size() << "B\n";
+    auto gtid = resp.head.gtidList.at(0);
+    LG_FEAT(AICHAT, "received AiChatServiceResp: gtid=0x%x contentSize=%zuB", gtid,
+            resp.content.size());
 
     pool_.getContext<ContextType>(gtid).useOrFailed(
         [&](ContextType &ctx) { processBusinessResp(ctx, resp); },
-        [gtid]()
-        {
-            std::cerr << "[AiChatBus] ERROR: no context for gtid=0x" << std::hex << gtid << std::dec
-                      << "\n";
-        });
+        [gtid]() { LG_ERR("no context for gtid=0x%x", gtid); });
 }
 
 template <common::TaskType T>
@@ -85,19 +76,19 @@ void AiChatBus<T>::processServiceRequest(ContextType &ctx, const AiChatBusinessR
 
     sendAck(req.head, gtid, seq, req.content);
 
-    std::cout << "[AiChatBus] msg committed: seq=" << seq << " contentSize=" << req.content.size()
-              << "B" << (ctx.pendingReqSeq != 0 ? " (preempting)" : "") << "\n";
+    LG_FEAT(AICHAT, "msg committed: seq=%u contentSize=%zuB%s", seq, req.content.size(),
+            ctx.pendingReqSeq != 0 ? " (preempting)" : "");
 
     ctx.pendingReqSeq = seq;
 
     if (not serviceGatewayAddr_)
     {
-        std::cerr << "[AiChatBus] ERROR: serviceGatewayAddr not set\n";
+        LG_ERR("serviceGatewayAddr not set");
         return;
     }
 
     auto serviceReq = buildAiChatServiceReq(req.head, gtid, "[" + std::move(body) + "]", ctx, seq);
-    std::cout << "[AiChatBus] sending AiChatServiceReq (reqSeq=" << seq << ") to gateway\n";
+    LG_FEAT(AICHAT, "sending AiChatServiceReq (reqSeq=%u) to gateway", seq);
     this->sendTo(serviceGatewayAddr_, std::move(serviceReq));
 }
 
@@ -106,14 +97,14 @@ void AiChatBus<T>::processBusinessResp(ContextType &ctx, const AiChatServiceResp
 {
     if (ctx.pendingReqSeq == 0)
     {
-        std::cerr << "[AiChatBus] ERROR: no pending request, dropping AiChatServiceResp\n";
+        LG_ERR("no pending request, dropping AiChatServiceResp");
         return;
     }
 
     if (resp.reqSeq != ctx.pendingReqSeq)
     {
-        std::cout << "[AiChatBus] stale response discarded (resp.reqSeq=" << resp.reqSeq
-                  << " != pendingReqSeq=" << ctx.pendingReqSeq << ")\n";
+        LG_WRN("stale response discarded (resp.reqSeq=%u != pendingReqSeq=%u)", resp.reqSeq,
+               ctx.pendingReqSeq);
         return;
     }
 
@@ -125,7 +116,7 @@ void AiChatBus<T>::processBusinessResp(ContextType &ctx, const AiChatServiceResp
 
     if (not sessionDataAddr_)
     {
-        std::cerr << "[AiChatBus] ERROR: sessionDataAddr not set\n";
+        LG_ERR("sessionDataAddr not set");
         return;
     }
 
@@ -220,8 +211,7 @@ void AiChatBus<T>::appendAssistantMsg(ContextType &ctx, const std::string &conte
 
     if (newLen > static_cast<int>(ctx.messagesBuffer.size()))
     {
-        std::cerr << "[AiChatBus] ERROR: messagesBuffer overflow! need " << newLen << " max "
-                  << ctx.messagesBuffer.size() << "\n";
+        LG_ERR("messagesBuffer overflow! need %d max %zu", newLen, ctx.messagesBuffer.size());
         return;
     }
 

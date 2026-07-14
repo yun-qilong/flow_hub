@@ -8,6 +8,7 @@ namespace
 {
 
 using namespace common::message;
+using utils::LogLevel;
 
 constexpr common::GTID kGtidIdx0 = 0x0001;
 constexpr common::GTID kGtidIdx1 = 0x0041;
@@ -60,6 +61,8 @@ TEST_F(TestRouter, CheckHandleTempConfig_Tag6RegistersRoute)
 {
     sendToMeFrom(businessStubA_, testee_, TempConfig{6});
 
+    EXPECT_LOG(LogLevel::DBG, 2);
+
     AiChatBusinessReq req;
     fillHead(req, {kAiChatGtid});
     sendToMe(std::move(req));
@@ -74,11 +77,15 @@ TEST_F(TestRouter, CheckHandleTempConfig_Tag6RegistersRoute)
 
 TEST_F(TestRouter, CheckHandleRouterConfigReq_InstallAndReply)
 {
+    EXPECT_LOG(LogLevel::INFO, 1);
+
     RouterConfigReq cfg;
     cfg.addresses.at(0) = stubAddress(businessStubA_);
     sendToMe(std::move(cfg));
 
     checkOutput<RouterConfigResp>([](RouterConfigResp &msg) { EXPECT_TRUE(msg.success); });
+
+    EXPECT_LOG(LogLevel::DBG, 2);
 
     AiChatBusinessReq req;
     fillHead(req, {kGtidIdx0});
@@ -90,11 +97,15 @@ TEST_F(TestRouter, CheckHandleRouterConfigReq_InstallAndReply)
 
 TEST_F(TestRouter, CheckHandleRouterReconfigReq_UpdateAndReply)
 {
+    EXPECT_LOG(LogLevel::INFO, 1);
+
     RouterReconfigReq recfg;
     recfg.entries.push_back({common::TaskType::Service, stubAddress(businessStubA_)});
     sendToMe(std::move(recfg));
 
     checkOutput<RouterReconfigResp>([](RouterReconfigResp &msg) { EXPECT_TRUE(msg.success); });
+
+    EXPECT_LOG(LogLevel::DBG, 2);
 
     AiChatBusinessReq req;
     fillHead(req, {kGtidIdx0});
@@ -106,10 +117,14 @@ TEST_F(TestRouter, CheckHandleRouterReconfigReq_UpdateAndReply)
 
 TEST_F(TestRouter, CheckRouteAndForward_SingleGtid)
 {
+    EXPECT_LOG(LogLevel::INFO, 1);
+
     RouterConfigReq cfg;
     cfg.addresses.at(0) = stubAddress(businessStubA_);
     sendToMe(std::move(cfg));
     checkOutput<RouterConfigResp>([](RouterConfigResp &msg) { EXPECT_TRUE(msg.success); });
+
+    EXPECT_LOG(LogLevel::DBG, 2);
 
     AiChatBusinessReq req;
     fillHead(req, {kGtidIdx0});
@@ -122,12 +137,16 @@ TEST_F(TestRouter, CheckRouteAndForward_SingleGtid)
 
 TEST_F(TestRouter, CheckRouteAndForward_MultipleGtids)
 {
+    EXPECT_LOG(LogLevel::INFO, 1);
+
     RouterConfigReq cfg;
     cfg.addresses.at(0) = stubAddress(businessStubA_);
     cfg.addresses.at(1) = stubAddress(businessStubB_);
     cfg.addresses.at(2) = stubAddress(businessStubC_);
     sendToMe(std::move(cfg));
     checkOutput<RouterConfigResp>([](RouterConfigResp &msg) { EXPECT_TRUE(msg.success); });
+
+    EXPECT_LOG(LogLevel::DBG, 4);
 
     AiChatBusinessReq req;
     fillHead(req, {kGtidIdx0, kGtidIdx1, kGtidIdx2});
@@ -144,6 +163,9 @@ TEST_F(TestRouter, CheckRouteAndForward_MultipleGtids)
 
 TEST_F(TestRouter, CheckRouteAndForward_EmptyGtidList)
 {
+    EXPECT_LOG(LogLevel::DBG, 1);
+    EXPECT_LOG(LogLevel::ERR, 1);
+
     AiChatServiceResp resp;
     fillHead(resp, {});
     resp.success = true;
@@ -152,10 +174,15 @@ TEST_F(TestRouter, CheckRouteAndForward_EmptyGtidList)
 
 TEST_F(TestRouter, CheckRouteAndForward_LastGtidNoRoute)
 {
+    EXPECT_LOG(LogLevel::INFO, 1);
+
     RouterConfigReq cfg;
     cfg.addresses.at(0) = stubAddress(businessStubA_);
     sendToMe(std::move(cfg));
     checkOutput<RouterConfigResp>([](RouterConfigResp &msg) { EXPECT_TRUE(msg.success); });
+
+    EXPECT_LOG(LogLevel::DBG, 2);
+    EXPECT_LOG(LogLevel::ERR, 1);
 
     AiChatServiceResp resp;
     fillHead(resp, {kGtidIdx0, static_cast<uint16_t>(0xFFFF)});
@@ -168,10 +195,14 @@ TEST_F(TestRouter, CheckRouteAndForward_LastGtidNoRoute)
 
 TEST_F(TestRouter, CheckHandleAiChatServiceResp_Routes)
 {
+    EXPECT_LOG(LogLevel::INFO, 1);
+
     RouterConfigReq cfg;
     cfg.addresses.at(0) = stubAddress(businessStubA_);
     sendToMe(std::move(cfg));
     checkOutput<RouterConfigResp>([](RouterConfigResp &msg) { EXPECT_TRUE(msg.success); });
+
+    EXPECT_LOG(LogLevel::DBG, 2);
 
     AiChatServiceResp resp;
     fillHead(resp, {kGtidIdx0});

@@ -2,7 +2,6 @@
 
 #include "DPlane/business/Router.hpp"
 
-#include <iostream>
 #include <utility>
 
 namespace DPlane::business
@@ -34,15 +33,14 @@ void Router::handle(const common::message::TempConfig &msg)
 
 void Router::handle(const RouterConfigReq &req)
 {
-    std::cout << "[Router] received RouterConfigReq, installing route table\n";
+    LG_INFO("received RouterConfigReq, installing route table");
     routeTable_ = req.addresses;
     replyToSender(RouterConfigResp{true});
 }
 
 void Router::handle(const RouterReconfigReq &req)
 {
-    std::cout << "[Router] received RouterReconfigReq, updating " << req.entries.size()
-              << " entries\n";
+    LG_INFO("received RouterReconfigReq, updating %zu entries", req.entries.size());
     for (const auto &entry : req.entries)
     {
         auto idx = static_cast<uint16_t>(entry.taskType);
@@ -53,15 +51,14 @@ void Router::handle(const RouterReconfigReq &req)
 
 void Router::handle(AiChatBusinessReq req)
 {
-    auto gtid = req.head.gtidList[0];
-    std::cout << "[Router] received AiChatBusinessReq: gtid=0x" << std::hex << gtid << std::dec
-              << " contentSize=" << req.content.size() << "B\n";
+    auto gtid = req.head.gtidList.at(0);
+    LG_DBG("received AiChatBusinessReq: gtid=0x%x contentSize=%zuB", gtid, req.content.size());
     routeAndForward(std::move(req), "AiChatBusinessReq");
 }
 
 void Router::handle(AiChatServiceResp resp)
 {
-    std::cout << "[Router] received AiChatServiceResp\n";
+    LG_DBG("received AiChatServiceResp");
     routeAndForward(std::move(resp), "AiChatServiceResp");
 }
 

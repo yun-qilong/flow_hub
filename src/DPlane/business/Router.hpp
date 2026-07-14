@@ -52,7 +52,7 @@ class Router : public fw::EoBase<Router>
         size_t n = list.size();
         if (n == 0)
         {
-            std::cerr << "[Router] ERROR: empty gtidList, dropping " << msgName << "\n";
+            LG_ERR("empty gtidList, dropping %s", msgName);
             return;
         }
 
@@ -61,7 +61,7 @@ class Router : public fw::EoBase<Router>
             auto addr = getTargetEoAddress(list.at(i));
             if (addr)
             {
-                std::cout << "[Router] routing " << msgName << " to Business EO (copy)\n";
+                LG_DBG("routing %s to Business EO (copy)", msgName);
                 sendTo(addr, Msg{msg});
             }
         }
@@ -69,12 +69,12 @@ class Router : public fw::EoBase<Router>
         auto lastAddr = getTargetEoAddress(list.at(n - 1));
         if (lastAddr)
         {
-            std::cout << "[Router] routing " << msgName << " to Business EO (delegate)\n";
+            LG_DBG("routing %s to Business EO (delegate)", msgName);
             delegateTo(lastAddr, std::move(msg));
         }
         else
         {
-            std::cerr << "[Router] ERROR: last GTID no route, dropping " << msgName << "\n";
+            LG_ERR("last GTID no route, dropping %s", msgName);
         }
     }
 };

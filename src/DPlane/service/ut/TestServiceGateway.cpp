@@ -8,6 +8,7 @@ namespace
 {
 
 using namespace common::message;
+using utils::LogLevel;
 
 class TestServiceGateway : public fw::EoTestBase
 {
@@ -38,6 +39,8 @@ TEST_F(TestServiceGateway, CheckHandleTempConfig_Tag10RegistersAdapter)
 {
     sendToMeFrom(aiApiAdapterStub_, testee_, TempConfig{10});
 
+    EXPECT_LOG(LogLevel::DBG, 1);
+
     AiChatServiceReq req;
     req.modelName = "gpt-4";
     sendToMe(std::move(req));
@@ -49,6 +52,8 @@ TEST_F(TestServiceGateway, CheckHandleTempConfig_Tag10RegistersAdapter)
 TEST_F(TestServiceGateway, CheckHandleAiChatServiceReq_ForwardsToAdapter)
 {
     sendToMeFrom(aiApiAdapterStub_, testee_, TempConfig{10});
+
+    EXPECT_LOG(LogLevel::DBG, 1);
 
     AiChatServiceReq req;
     req.modelName = "claude-3";
@@ -70,6 +75,9 @@ TEST_F(TestServiceGateway, CheckHandleAiChatServiceReq_ForwardsToAdapter)
 
 TEST_F(TestServiceGateway, CheckHandleAiChatServiceReq_AdapterNotSet)
 {
+    EXPECT_LOG(LogLevel::DBG, 1);
+    EXPECT_LOG(LogLevel::ERR, 1);
+
     AiChatServiceReq req;
     req.modelName = "gpt-4";
     sendToMe(std::move(req));

@@ -4,7 +4,6 @@
 #include "utils/HttpClient.hpp"
 #include "utils/JsonCoDec.hpp"
 
-#include <iostream>
 #include <utility>
 
 namespace DPlane::service
@@ -35,9 +34,8 @@ utils::HttpClient::Response AiApiAdapter::callApi(const AiChatServiceReq &req)
 
 void AiApiAdapter::handle(const AiChatServiceReq &req)
 {
-    std::cout << "[AiApiAdapter] HTTP request"
-              << " model=" << req.modelName << " temp=" << req.temperature
-              << " msgSize=" << req.messagesJson.size() << "B\n";
+    LG_DBG("HTTP request model=%s temp=%.1f msgSize=%zuB", req.modelName.c_str(), req.temperature,
+           req.messagesJson.size());
 
     auto response = callApi(req);
 
@@ -54,7 +52,7 @@ void AiApiAdapter::handle(const AiChatServiceReq &req)
         resp.content = response.body;
     }
 
-    std::cout << "[AiApiAdapter] HTTP " << response.httpCode << "\n";
+    LG_DBG("HTTP %d", response.httpCode);
 
     if (routerAddr_)
     {
@@ -62,7 +60,7 @@ void AiApiAdapter::handle(const AiChatServiceReq &req)
     }
     else
     {
-        std::cerr << "[AiApiAdapter] WARNING: routerAddr not set, dropping response\n";
+        LG_WRN("routerAddr not set, dropping response");
     }
 }
 

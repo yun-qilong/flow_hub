@@ -4,8 +4,6 @@
 
 #include "common/UidUtil.hpp"
 
-#include <iostream>
-
 namespace DPlane::session
 {
 
@@ -36,13 +34,12 @@ void SessionData::handle(const common::message::TempConfig &msg)
 
 void SessionData::handle(AiChatBusinessReq req)
 {
-    auto gtid = req.head.gtidList.empty() ? common::kInvalidGtid : req.head.gtidList[0];
-    std::cout << "[SessionData] received AiChatBusinessReq: gtid=0x" << std::hex << gtid << std::dec
-              << " contentSize=" << req.content.size() << "B\n";
+    auto gtid = req.head.gtidList.empty() ? common::kInvalidGtid : req.head.gtidList.at(0);
+    LG_DBG("received AiChatBusinessReq: gtid=0x%x contentSize=%zuB", gtid, req.content.size());
 
     if (not routerAddr_)
     {
-        std::cerr << "[SessionData] ERROR: routerAddr not set\n";
+        LG_ERR("routerAddr not set");
         return;
     }
 
@@ -51,14 +48,12 @@ void SessionData::handle(AiChatBusinessReq req)
 
 void SessionData::handle(AiChatBusinessResp resp)
 {
-    auto gtid = resp.head.gtidList.empty() ? common::kInvalidGtid : resp.head.gtidList[0];
-    std::cout << "[SessionData] received AiChatBusinessResp: gtid=0x" << std::hex << gtid
-              << std::dec << " contentSize=" << resp.content.size() << "B\n";
+    auto gtid = resp.head.gtidList.empty() ? common::kInvalidGtid : resp.head.gtidList.at(0);
+    LG_DBG("received AiChatBusinessResp: gtid=0x%x contentSize=%zuB", gtid, resp.content.size());
 
     if (not accessGatewayAddr_)
     {
-        std::cerr
-            << "[SessionData] ERROR: accessGatewayAddr not set, dropping AiChatBusinessResp\n";
+        LG_ERR("accessGatewayAddr not set, dropping AiChatBusinessResp");
         return;
     }
 
@@ -68,13 +63,13 @@ void SessionData::handle(AiChatBusinessResp resp)
 
 void SessionData::handle(AiChatMsgAck ack)
 {
-    auto gtid = ack.head.gtidList.empty() ? common::kInvalidGtid : ack.head.gtidList[0];
-    std::cout << "[SessionData] received AiChatMsgAck: gtid=0x" << std::hex << gtid << std::dec
-              << " seq=" << ack.seq << " contentSize=" << ack.content.size() << "B\n";
+    auto gtid = ack.head.gtidList.empty() ? common::kInvalidGtid : ack.head.gtidList.at(0);
+    LG_DBG("received AiChatMsgAck: gtid=0x%x seq=%u contentSize=%zuB", gtid, ack.seq,
+           ack.content.size());
 
     if (not accessGatewayAddr_)
     {
-        std::cerr << "[SessionData] ERROR: accessGatewayAddr not set, dropping AiChatMsgAck\n";
+        LG_ERR("accessGatewayAddr not set, dropping AiChatMsgAck");
         return;
     }
 
@@ -84,8 +79,7 @@ void SessionData::handle(AiChatMsgAck ack)
 
 void SessionData::handle(const UserLoginSessionReq &req)
 {
-    std::cout << "[SessionData] UserLoginSessionReq: uid=0x" << std::hex << req.head.uid << std::dec
-              << " gtids=" << req.gtids.size() << "\n";
+    LG_DBG("UserLoginSessionReq: uid=0x%x gtids=%zu", req.head.uid, req.gtids.size());
 
     setAccessBit(req.head.uid, req.head.accessType);
 
@@ -97,8 +91,7 @@ void SessionData::handle(const UserLoginSessionReq &req)
 
 void SessionData::handle(const UserRegisterSessionReq &req)
 {
-    std::cout << "[SessionData] UserRegisterSessionReq: userId=" << static_cast<int>(req.userId)
-              << "\n";
+    LG_DBG("UserRegisterSessionReq: userId=%d", static_cast<int>(req.userId));
 
     for (size_t i = 0; i < common::kMaxAppTypes; ++i)
     {
@@ -111,12 +104,11 @@ void SessionData::handle(const TaskDeleteSessionReq &req)
 {
     if (req.head.gtidList.empty())
     {
-        std::cerr << "[SessionData] ERROR: TaskDeleteSessionReq has empty gtidList\n";
+        LG_ERR("TaskDeleteSessionReq has empty gtidList");
         return;
     }
-    auto gtid = req.head.gtidList[0];
-    std::cout << "[SessionData] TaskDeleteSessionReq: uid=0x" << std::hex << req.head.uid
-              << std::dec << " gtid=0x" << std::hex << gtid << std::dec << "\n";
+    auto gtid = req.head.gtidList.at(0);
+    LG_DBG("TaskDeleteSessionReq: uid=0x%x gtid=0x%x", req.head.uid, gtid);
 
     TaskSync sync;
     sync.head = req.head;
@@ -128,8 +120,7 @@ void SessionData::handle(const TaskDeleteSessionReq &req)
 
 void SessionData::handle(const UserLogoutSessionReq &req)
 {
-    std::cout << "[SessionData] UserLogoutSessionReq: uid=0x" << std::hex << req.head.uid
-              << std::dec << "\n";
+    LG_DBG("UserLogoutSessionReq: uid=0x%x", req.head.uid);
 
     clearAccessBit(req.head.uid, req.head.accessType);
 

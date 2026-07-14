@@ -27,8 +27,8 @@ inline std::string formatLog(const char *fmt, Args &&...args)
     else
     {
         std::array<char, 512> buf{};
-        auto n = snprintf(buf.data(), buf.size(), fmt,
-                          std::forward<Args>(args)...); // NOLINT(cppcoreguidelines-pro-type-vararg)
+        auto n = snprintf(buf.data(), buf.size(), fmt, // NOLINT(cppcoreguidelines-pro-type-vararg)
+                          std::forward<Args>(args)...);
         static_cast<void>(n);
         return {buf.data()};
     }
