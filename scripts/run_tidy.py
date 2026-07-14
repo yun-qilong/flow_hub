@@ -253,14 +253,16 @@ def check_whitelist(results, whitelist, repo_root):
             key = (rp, check)
             if key not in actual_counts:
                 stale_items.append(
-                    f"  stale: {rp}: {check} "
+                    f"  STALE: {rp}: {check} "
                     f"(whitelist: {expected}, actual: 0)")
+                has_new = True
 
     if stale_items:
         print(f"\n--- STALE WHITELIST ENTRIES ({len(stale_items)}) ---")
         for s in stale_items:
             print(s)
 
+    violations.extend(stale_items)
     return has_new, violations
 
 
@@ -291,6 +293,10 @@ def main():
     files = sorted(set(e["file"] for e in project_entries))
     tidy_config = Path(".clang-tidy")
     tidy_bin = os.environ.get("CLANG_TIDY_BIN", "clang-tidy")
+
+    # Print version for CI/local diagnostics
+    ver = subprocess.run([tidy_bin, "--version"], capture_output=True, text=True)
+    print(f"clang-tidy: {ver.stdout.strip()}")
 
     if not tidy_config.exists():
         print("No .clang-tidy config, skipping", file=sys.stderr)

@@ -1,4 +1,4 @@
-HeaderFilterRegex: '.*/flowHub[^/]*/src/(common|fw|DPlane|CPlane|access|userAccess|utils|generated)/.*\.(hpp|cpp)$'
+HeaderFilterRegex: '.*/src/(common|fw|DPlane|CPlane|access|userAccess|utils|generated)/.*\.(hpp|cpp)$'
 
 Checks: >
   -*,

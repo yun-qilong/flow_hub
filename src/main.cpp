@@ -15,6 +15,7 @@
 #include "DPlane/session/SessionData.hpp"
 #include "userAccess/AccessGateway.hpp"
 #include "userAccess/CliAdapter.hpp"
+#include "utils/SysLog.hpp"
 
 #include <chrono>
 #include <cstdlib>
@@ -38,6 +39,8 @@ int main()
 {
     fw::EoEnv env;
     TaskPool pool;
+
+    utils::gSysLog() = utils::createSysLog();
 
     // ---- API 配置 ----
     const char *apiKey = std::getenv("FLOWHUB_API_KEY");

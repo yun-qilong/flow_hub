@@ -1,6 +1,7 @@
 #include "common/TaskPool.hpp"
 #include "CPlane/SessionMgr.hpp"
 #include "fw/EoTestBase.hpp"
+#include "utils/SysLog.hpp"
 
 #include <gtest/gtest.h>
 
@@ -14,6 +15,9 @@ class TestSessionMgr : public fw::EoTestBase
   protected:
     void SetUp() override
     {
+        mockLog_ = std::make_unique<utils::MockSysLog>();
+        utils::gSysLog() = mockLog_.get();
+
         accessGateway_ = makeStub();
         sessionData_ = makeStub();
         businessMgr_ = makeStub();
@@ -28,10 +32,16 @@ class TestSessionMgr : public fw::EoTestBase
         sendToMeFrom(businessMgr_, testee_, TempConfig{4});
     }
 
+    void TearDown() override
+    {
+        utils::gSysLog() = nullptr;
+    }
+
     common::TaskPool pool_{};
     Stub accessGateway_;
     Stub sessionData_;
     Stub businessMgr_;
+    std::unique_ptr<utils::MockSysLog> mockLog_;
 
     static constexpr common::AccessType kReqAccessType = kDefaultAccessType;
     static constexpr common::AccessType kSecondAccessType = static_cast<common::AccessType>(3);
@@ -60,6 +70,9 @@ class TestSessionMgr : public fw::EoTestBase
 
 TEST_F(TestSessionMgr, CheckHandleUserRegisterReq_UsernameTooLong)
 {
+    EXPECT_CALL(*mockLog_, log(utils::LogLevel::INFO, ::testing::_)).Times(1);
+    EXPECT_CALL(*mockLog_, log(utils::LogLevel::ERR, ::testing::_)).Times(1);
+
     auto req = UserRegisterReq{};
     fillDefaultHead(req);
     req.head.uid = common::kInvalidUid;
@@ -81,6 +94,9 @@ TEST_F(TestSessionMgr, CheckHandleUserRegisterReq_UsernameTooLong)
 
 TEST_F(TestSessionMgr, CheckHandleUserRegisterReq_DuplicateUsername)
 {
+    EXPECT_CALL(*mockLog_, log(utils::LogLevel::INFO, ::testing::_)).Times(3);
+    EXPECT_CALL(*mockLog_, log(utils::LogLevel::ERR, ::testing::_)).Times(1);
+
     auto first = UserRegisterReq{};
     fillDefaultHead(first);
     first.head.uid = common::kInvalidUid;
@@ -112,6 +128,9 @@ TEST_F(TestSessionMgr, CheckHandleUserRegisterReq_DuplicateUsername)
 
 TEST_F(TestSessionMgr, CheckHandleUserLoginReq_UserNotFound)
 {
+    EXPECT_CALL(*mockLog_, log(utils::LogLevel::INFO, ::testing::_)).Times(1);
+    EXPECT_CALL(*mockLog_, log(utils::LogLevel::ERR, ::testing::_)).Times(1);
+
     auto req = UserLoginReq{};
     fillDefaultHead(req);
     req.head.uid = common::kInvalidUid;
@@ -135,6 +154,10 @@ TEST_F(TestSessionMgr, CheckHandleUserLoginReq_UserNotFound)
 
 TEST_F(TestSessionMgr, CheckHandleSessionLifecycle)
 {
+    EXPECT_CALL(*mockLog_, log(utils::LogLevel::INFO, ::testing::_)).Times(10);
+    EXPECT_CALL(*mockLog_, log(utils::LogLevel::DBG, ::testing::_)).Times(20);
+    EXPECT_CALL(*mockLog_, log(utils::LogLevel::ERR, ::testing::_)).Times(2);
+
     constexpr uint16_t kUserUid = 1;
 
     // ===== register =====

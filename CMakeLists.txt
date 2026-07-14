@@ -50,6 +50,19 @@ add_custom_command(
 )
 add_custom_target(gen_code DEPENDS ${CMAKE_SOURCE_DIR}/src/generated/message/Messages.hpp)
 
+# ---- 日志配置代码生成 --------------------------------------------
+add_custom_command(
+    OUTPUT ${CMAKE_SOURCE_DIR}/src/generated/LogConfig.hpp
+    COMMAND python3 ${CMAKE_SOURCE_DIR}/scripts/gen_log_config.py
+    DEPENDS
+        ${CMAKE_SOURCE_DIR}/scripts/gen_log_config.py
+        ${CMAKE_SOURCE_DIR}/config/log_config.conf
+        ${CMAKE_SOURCE_DIR}/src/utils/LogTypes.hpp
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    COMMENT "Generating LogConfig.hpp from log_config.conf"
+)
+add_custom_target(gen_log_config DEPENDS ${CMAKE_SOURCE_DIR}/src/generated/LogConfig.hpp)
+
 # ---- UT 编译 target（供 i but 使用）-----------------------------
 # flowhub_ut 必须在 add_subdirectory 之前定义，因为子目录会 add_dependencies 到它
 if(FLOWHUB_BUILD_TESTS)
@@ -64,7 +77,7 @@ if(FLOWHUB_BUILD_TESTS)
         target_compile_definitions(${TEST_NAME} PRIVATE FLOWHUB_TEST_BUILD)
         target_include_directories(${TEST_NAME} PRIVATE ${CMAKE_SOURCE_DIR}/src)
         target_link_libraries(${TEST_NAME} PRIVATE CAF::core GTest::gtest_main ${UT_EXTRA_LIBS})
-        add_dependencies(${TEST_NAME} gen_code)
+        add_dependencies(${TEST_NAME} gen_code gen_log_config)
         add_dependencies(flowhub_ut ${TEST_NAME})
 
         include(GoogleTest)

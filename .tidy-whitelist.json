@@ -1,7 +1,6 @@
 {
   "src/CPlane/SessionMgr.cpp": {
-    "cppcoreguidelines-avoid-c-arrays,modernize-avoid-c-arrays": 1,
-    "readability-function-size": 3
+    "cppcoreguidelines-avoid-c-arrays,modernize-avoid-c-arrays": 1
   },
   "src/main.cpp": {
     "cppcoreguidelines-avoid-c-arrays,modernize-avoid-c-arrays": 1,

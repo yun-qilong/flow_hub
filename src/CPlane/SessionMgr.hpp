@@ -86,6 +86,10 @@ class SessionMgr : public fw::EoBase<SessionMgr>
         return false;
     }
 
+    void noticeSessionData(const common::message::UserHead &head, common::UserId userId);
+    void processCreateTask(common::UserId userId, common::AppType appType,
+                           common::TaskType taskType, common::message::TaskCreateResp &resp);
+    bool isUsernameValid(const std::string &username) const;
     common::UserId allocateUserId();
     common::message::UserLoginSessionReq static buildLoginSessionReq(
         const common::message::UserHead &head, uint16_t uid,

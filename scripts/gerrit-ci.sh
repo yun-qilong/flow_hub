@@ -172,6 +172,12 @@ main() {
   # ---- 4. clang-tidy -------------------------------------------------
   echo ""
   echo ">>> clang-tidy"
+  echo "=== diagnostics ==="
+  which clang-tidy-14 || echo "clang-tidy-14 NOT FOUND"
+  clang-tidy-14 --version || echo "version check failed"
+  echo "HeaderFilterRegex:"
+  grep HeaderFilterRegex "${SRC_DIR}/.clang-tidy" || echo "NOT FOUND"
+  echo "==================="
   if [[ -z "${CHANGED_FILES}" ]]; then
     run_check "clang-tidy" "static-analysis" bash -c "echo 'no changed C++ files'; exit 0"
   else
@@ -179,7 +185,7 @@ main() {
       cd '${SRC_DIR}'
       echo '${CHANGED_FILES}' | tr ' ' '\n' | while read -r f; do
         [[ -f \"\${f}\" ]] || continue
-        clang-tidy --config-file='${SRC_DIR}/.clang-tidy' \
+        clang-tidy-14 --config-file='${SRC_DIR}/.clang-tidy' \
           -p='${BUILD_DIR}/build' \"\${f}\" 2>&1 || true
       done
     "

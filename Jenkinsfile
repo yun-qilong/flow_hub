@@ -13,7 +13,7 @@ pipeline {
     stage('Build') {
       steps {
         dir('src') {
-          sh 'cmake -B build -DCMAKE_BUILD_TYPE=Release -DFLOWHUB_BUILD_TESTS=ON && cmake --build build --target flowhub flowhub_ut -j $(nproc)'
+          sh 'sudo apt-get update && sudo apt-get install -y clang-tidy-14 && cmake -B build -DCMAKE_BUILD_TYPE=Release -DFLOWHUB_BUILD_TESTS=ON && cmake --build build --target flowhub flowhub_ut -j $(nproc)'
         }
       }
     }
@@ -41,7 +41,11 @@ echo "Format check complete"'''
     stage('Tidy') {
       steps {
         dir('src') {
-          sh 'python3 scripts/run_tidy.py'
+          sh '''echo "=== clang-tidy diagnostics ==="
+which clang-tidy-14 || echo "clang-tidy-14 NOT FOUND"
+clang-tidy-14 --version || echo "version check failed"
+echo "================================"
+CLANG_TIDY_BIN=clang-tidy-14 python3 scripts/run_tidy.py'''
         }
       }
     }
