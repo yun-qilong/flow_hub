@@ -46,7 +46,7 @@ main()
 | SessionMgr（C 面） | 创建 + 销毁 | 管理 GTID 和对应 Context slot 的生命周期 |
 | 其他层/面 | 无权限 | 不允许直接访问 Context |
 
-**原子性规则**（延续 README §3.2）：EO 在处理一条消息的过程中，所有 Context 修改必须与该消息的处理原子绑定——即处理完一条消息后统一写回，禁止在处理中间过程中修改 Context。日志/可观测性写入不受此约束。
+**原子性规则**：EO 在处理一条消息的过程中，所有 Context 修改必须与该消息的处理原子绑定——即处理完一条消息后统一写回，禁止在处理中间过程中修改 Context。日志/可观测性写入不受此约束。
 
 ### 3. Context 并发控制
 
@@ -133,4 +133,3 @@ ServiceMgr ──(Adapter地址)──▶ BusinessMgr ──(Reconfig)──▶ 
 - `BusinessMgr` 新增映射表维护逻辑和 Reconfig 消息处理
 - `Router` 新增映射表副本维护和 Reconfig 消息处理
 - Service Layer Adapter 地址变更时需通知 ServiceMgr，触发地址下发链路
-- README §3.2（上下文）、§6.2（Router 与双地址）需相应修改

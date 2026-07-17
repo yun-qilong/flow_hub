@@ -45,7 +45,7 @@ pool.getContext<ContextType>(gtid).useOrFailed(
 
 | 规则 | 说明 |
 |------|------|
-| EO 必须声明 `ContextType` | 需要读写 Context 的 EO（如 AiChatBus、AutomationBus）必须指定 |
+| EO 必须声明 `ContextType` | 需要读写 Context 的 EO（如 AiChatBus）必须指定 |
 | 只读访问不受限 | `getContextRead` 不做类型检查，任何 EO 可读任意 Context |
 | Router 等纯转发 EO 不指定 | `ContextType = void`（默认），不操作 Context |
 | 一个 EO 绑定一种 Context | EO 职责单一，不做多 Context 混合操作 |

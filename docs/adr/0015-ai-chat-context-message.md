@@ -2,7 +2,13 @@
 
 | 状态 | 日期 | 决策者 |
 |------|------|--------|
-| 已采纳 | 2026-06-16 | 韵启龙 |
+| 已采纳（部分修订） | 2026-06-16 | 韵启龙 |
+
+> **修订**：
+> - `AiChatStage` 枚举已被 [ADR-0020](../adr/0020-seq-version-control.md) 废弃，改为 `pendingReqSeq` 版本号机制
+> - `turnCount` 由 `messageCount` 取代（ADR-0020）
+> - `businessReplyAddr` 引用的 `sourceAddress` 字段已被 [ADR-0024](../adr/0024-head-accesstype-reuse.md) 移除
+> - 对话历史存储机制（messagesBuffer）和消息体传递 JSON 字符串的决策仍然有效
 
 ---
 
