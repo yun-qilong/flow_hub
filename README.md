@@ -75,9 +75,9 @@ Business D 面以 Router 为入口，Service D 面以 ServiceGateway 为入口�
 
 ## 关于本项目
 
-开发遵循文档先行的流程：需求 → ADR 决策记录 → 设计文档 → 代码 → 单元测试。24 篇 ADR 记录了全部关键设计决策。
+开发遵循文档先行的流程：需求 → ADR 决策记录 → 代码 → 单元测试。24 篇 ADR 记录了全部关键设计决策。
 
-项目配备 CI 流水线（Gerrit + GitHub Actions），每次提交自动编译、运行单元测试、clang-format 格式检查和 clang-tidy 静态分析。
+本地搭建了 Gerrit 代码审查 + CI 门禁流水线，提交后自动触发编译、单元测试、clang-format 格式检查和 clang-tidy 静态分析。GitHub 侧同步相同的 CI 流程。个人项目用 Gerrit 看似小题大做——但代码审查和自动化门禁不是团队才需要的仪式，是工程习惯。
 
 ---
 
