@@ -23,15 +23,13 @@
 namespace fw
 {
 
-template <typename Derived>
+template <typename Derived, bool MayBlock = false>
 class EoBase : public caf::event_based_actor, public utils::CrtpBase<Derived>
 {
   public:
     explicit EoBase(EoConfig &cfg) : caf::event_based_actor(cfg) {}
 
-    // 编译期标签：派生类覆盖为 true 表示 handler 中可能阻塞。
-    // createEo 据此自动选择独立线程（detached）或共享池。
-    static constexpr bool kMayBlock = false;
+    static constexpr bool kMayBlock = MayBlock;
 
   protected:
     // ----- message handler registration -------------------------------

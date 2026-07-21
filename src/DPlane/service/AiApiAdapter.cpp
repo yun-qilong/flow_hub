@@ -14,9 +14,9 @@ using AiChatServiceResp = common::message::AiChatServiceResp;
 AiApiAdapter::AiApiAdapter(fw::EoConfig &cfg, std::string apiBaseUrl, std::string apiKey,
                            std::string defaultModel, fw::EoAddress routerAddr,
                            fw::EoAddress serviceMgrAddr, fw::EoAddress serviceGatewayAddr)
-    : fw::EoBase<AiApiAdapter>(cfg), apiBaseUrl_(std::move(apiBaseUrl)), apiKey_(std::move(apiKey)),
-      defaultModel_(std::move(defaultModel)), routerAddr_(std::move(routerAddr)),
-      serviceMgrAddr_(std::move(serviceMgrAddr))
+    : fw::EoBase<AiApiAdapter, true>(cfg), apiBaseUrl_(std::move(apiBaseUrl)),
+      apiKey_(std::move(apiKey)), defaultModel_(std::move(defaultModel)),
+      routerAddr_(std::move(routerAddr)), serviceMgrAddr_(std::move(serviceMgrAddr))
 {
     sendTo(std::move(serviceGatewayAddr), common::message::TempConfig{10});
     sendTo(serviceMgrAddr_, common::message::TempConfig{11});

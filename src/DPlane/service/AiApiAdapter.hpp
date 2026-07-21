@@ -14,11 +14,8 @@
 namespace DPlane::service
 {
 
-class AiApiAdapter : public fw::EoBase<AiApiAdapter>
+class AiApiAdapter : public fw::EoBase<AiApiAdapter, true>
 {
-  public:
-    static constexpr bool kMayBlock = true;
-
   public:
     AiApiAdapter(fw::EoConfig &cfg, std::string apiBaseUrl, std::string apiKey,
                  std::string defaultModel, fw::EoAddress routerAddr, fw::EoAddress serviceMgrAddr,
