@@ -28,9 +28,10 @@ _deps/
 # Python
 __pycache__/
 
-# GitHub (only track workflows)
+# GitHub (only track workflows and issue templates)
 .github/*
 !.github/workflows/
+!.github/ISSUE_TEMPLATE/
 
 # Plugin
 .continue/
@@ -44,3 +45,6 @@ tidy-report.html
 
 # Logs
 logs/
+
+# Notes
+notes/

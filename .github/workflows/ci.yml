@@ -12,6 +12,10 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Issue Check
+        continue-on-error: true
+        run: bash scripts/check-issue-ref.sh HEAD
+
       - name: Install dependencies
         run: |
           sudo apt-get update

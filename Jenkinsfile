@@ -10,10 +10,19 @@ pipeline {
         ])
       }
     }
+    stage('Issue Check') {
+      steps {
+        catchError(buildResult: 'FAILURE', stageResult: 'FAILURE') {
+          dir('src') {
+            sh 'bash scripts/check-issue-ref.sh --strict FETCH_HEAD'
+          }
+        }
+      }
+    }
     stage('Build') {
       steps {
         dir('src') {
-          sh 'sudo apt-get update && sudo apt-get install -y clang-tidy-14 && cmake -B build -DCMAKE_BUILD_TYPE=Release -DFLOWHUB_BUILD_TESTS=ON && cmake --build build --target flowhub flowhub_ut -j $(nproc)'
+          sh 'cmake -B build -DCMAKE_BUILD_TYPE=Release -DFLOWHUB_BUILD_TESTS=ON && cmake --build build --target flowhub flowhub_ut -j $(nproc)'
         }
       }
     }
