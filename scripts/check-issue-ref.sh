@@ -91,6 +91,17 @@ EXPECTED_TAG_LINE="**Tag**: $TAG_CLEAN"
 
 if grep -qF "$EXPECTED_TAG_LINE" /tmp/issue_body.json 2>/dev/null; then
   echo "✓ Tag-Issue cross-validation passed"
+
+  # Check if issue is closed (strict mode only)
+  if $STRICT; then
+    ISSUE_STATE=$(grep -oP '"state"\s*:\s*"\K\w+' /tmp/issue_body.json | head -1)
+    if [[ "$ISSUE_STATE" == "closed" ]]; then
+      rm -f /tmp/issue_body.json
+      die "Issue #${ISSUE_NUM} is CLOSED.
+  Reopen it or use a different issue."
+    fi
+  fi
+
   rm -f /tmp/issue_body.json
   exit 0
 else
