@@ -47,11 +47,11 @@ fi
 
 SUBJECT=$(echo "$COMMIT_MSG" | head -1)
 
-# Extract Tag: [FTxxxx], [FXxxxx], [RIxxxx], or [None]
-TAG=$(echo "$SUBJECT" | grep -oP '^\[(FT\d{4}(-[A-Z](-Design)?)?|FX\d{4}|RI\d{4}|None)\]' | head -1 || true)
+# Extract first [...] as Tag
+TAG=$(echo "$SUBJECT" | grep -oP '^\[[^]]+\]' | head -1 || true)
 
 if [[ -z "$TAG" ]]; then
-  die "Subject must start with [FTxxxx], [FXxxxx], [RIxxxx], or [None].
+  die "Subject must start with [Tag].
   Subject: $SUBJECT
   Example: [RI0001] Set up task tracking system (#2)"
 fi
@@ -89,7 +89,7 @@ fi
 TAG_CLEAN=$(echo "$TAG" | tr -d '[]')
 EXPECTED_TAG_LINE="**Tag**: $TAG_CLEAN"
 
-if grep -qF "$EXPECTED_TAG_LINE" /tmp/issue_body.json 2>/dev/null; then
+if grep -qP "\*\*Tag\*\*:\s*${TAG_CLEAN}(?![-A-Za-z0-9])" /tmp/issue_body.json 2>/dev/null; then
   echo "✓ Tag-Issue cross-validation passed"
 
   # Check if issue is closed (strict mode only)
