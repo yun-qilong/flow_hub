@@ -8,9 +8,9 @@ Reads:
   src/common/type/*.mt       → define Name = baseType  (type aliases)
   src/common/message/*.mt    → message Name / struct Name  (CAF messages)
   src/common/context/*.mt    → shared struct definitions (no category)
-  src/common/context/systemContext/*.mt  → System-category contexts
-  src/common/context/userContext/*.mt    → User-category contexts
-  src/common/context/otherContext/*.mt   → Other-category contexts
+  src/common/context/systemContext/*.mt   → System-category contexts
+  src/common/context/sessionContext/*.mt  → Session-category contexts
+  src/common/context/busContext/*.mt      → Bus-category contexts
 
 Writes:
   src/generated/Types.hpp                        (type aliases)
@@ -107,9 +107,9 @@ def load_constants(constants_path: str) -> None:
 # ---- category detection ------------------------------------------------
 # Maps context subdirectory name → GTID Category field value (ADR-0008)
 CATEGORY_DIRS = {
-    "systemContext": 0x0,
-    "userContext":   0x7,
-    "otherContext":  0xC,
+    "systemContext":  0x0,
+    "sessionContext": 0x7,
+    "busContext":     0x9,
 }
 
 

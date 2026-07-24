@@ -26,7 +26,7 @@ void Router::handle(const common::message::TempConfig &msg)
 {
     if (msg.tag == 6)
     {
-        auto idx = static_cast<uint16_t>(common::TaskType::AiChat);
+        auto idx = static_cast<uint16_t>(common::TaskType::AiAgora);
         routeTable_.at(idx) = senderAddress();
     }
 }

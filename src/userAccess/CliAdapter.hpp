@@ -14,8 +14,8 @@ struct NoConnection
 {
 };
 
-class CliAdapter : public AccessAdapterBase<CliAdapter, common::AppType::AiChat,
-                                            common::AccessType::AiChatCLI, NoConnection>
+class CliAdapter : public AccessAdapterBase<CliAdapter, common::AppType::AiAgora,
+                                            common::AccessType::AiAgoraCLI, NoConnection>
 {
     using Base = AccessAdapterBase;
 

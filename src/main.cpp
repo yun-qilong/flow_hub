@@ -79,7 +79,7 @@ int main()
     auto businessMgr = env.createEo<CPlane::BusinessMgr>(sessionMgr);
     // D面
     auto router = env.createEo<DPlane::business::Router>(businessMgr, sessionData);
-    auto aiChatBus = env.createEo<DPlane::business::AiChatBus<TaskType::AiChat>>(
+    auto aiChatBus = env.createEo<DPlane::business::AiChatBus<TaskType::AiAgora>>(
         pool, sessionData, businessMgr, router,
         model ? std::string(model) : std::string("default"));
 

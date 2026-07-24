@@ -6,7 +6,7 @@ namespace userAccess
 AccessGateway::AccessGateway(fw::EoConfig &cfg, const fw::EoAddress &cliAdapter)
     : fw::EoBase<AccessGateway>(cfg)
 {
-    adapterTable_.at(static_cast<size_t>(common::AccessType::AiChatCLI)) = cliAdapter;
+    adapterTable_.at(static_cast<size_t>(common::AccessType::AiAgoraCLI)) = cliAdapter;
     sendTo(cliAdapter, common::message::TempConfig{0});
 }
 

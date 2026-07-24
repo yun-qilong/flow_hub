@@ -79,9 +79,9 @@ class SessionMgr : public fw::EoBase<SessionMgr>
     {
         switch (app)
         {
-        case common::AppType::AiChat:
+        case common::AppType::AiAgora:
         case common::AppType::AiDiscussion:
-            return task == common::TaskType::AiChat;
+            return task == common::TaskType::AiAgora;
         }
         return false;
     }

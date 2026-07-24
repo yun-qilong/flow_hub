@@ -12,8 +12,8 @@ namespace
 using namespace common::message;
 using utils::LogFeature;
 using utils::LogLevel;
-using AiChatBus = DPlane::business::AiChatBus<common::TaskType::AiChat>;
-using AiChatContext = common::context::AiChatContext;
+using AiChatBus = DPlane::business::AiChatBus<common::TaskType::AiAgora>;
+using AiAgoraContext = common::context::AiAgoraContext;
 
 class TestAiChatBus : public fw::EoTestBase
 {
@@ -30,7 +30,7 @@ class TestAiChatBus : public fw::EoTestBase
         trackStub(routerStub_);
         trackStub(serviceGatewayStub_);
 
-        pool_.allocate(common::TaskType::AiChat)
+        pool_.allocate(common::TaskType::AiAgora)
             .useOrFailed([&](common::GTID g) { gtid_ = g; },
                          [] { FAIL() << "failed to allocate GTID"; });
 
@@ -43,7 +43,7 @@ class TestAiChatBus : public fw::EoTestBase
     template <typename F>
     void withCtx(F &&fn)
     {
-        pool_.getContext<AiChatContext>(gtid_).useOrFailed([&](AiChatContext &ctx) { fn(ctx); },
+        pool_.getContext<AiAgoraContext>(gtid_).useOrFailed([&](AiAgoraContext &ctx) { fn(ctx); },
                                                            [] { FAIL() << "context not found"; });
     }
 
@@ -128,7 +128,7 @@ TEST_F(TestAiChatBus, CheckHandleAiChatServiceResp_NormalResp)
     EXPECT_LOG_FEAT(LogFeature::AICHAT, 1);
 
     withCtx(
-        [](AiChatContext &ctx)
+        [](AiAgoraContext &ctx)
         {
             ctx.pendingReqSeq = 1;
             ctx.messageCount = 1;
@@ -156,7 +156,7 @@ TEST_F(TestAiChatBus, CheckHandleAiChatServiceResp_NoPendingReq)
     EXPECT_LOG_FEAT(LogFeature::AICHAT, 1);
     EXPECT_LOG(LogLevel::ERR, 1);
 
-    withCtx([](AiChatContext &ctx) { ctx.pendingReqSeq = 0; });
+    withCtx([](AiAgoraContext &ctx) { ctx.pendingReqSeq = 0; });
 
     AiChatServiceResp resp;
     fillHead(resp, gtid_);
@@ -170,7 +170,7 @@ TEST_F(TestAiChatBus, CheckHandleAiChatServiceResp_StaleSeq)
     EXPECT_LOG_FEAT(LogFeature::AICHAT, 1);
     EXPECT_LOG(LogLevel::WRN, 1);
 
-    withCtx([](AiChatContext &ctx) { ctx.pendingReqSeq = 5; });
+    withCtx([](AiAgoraContext &ctx) { ctx.pendingReqSeq = 5; });
 
     AiChatServiceResp resp;
     fillHead(resp, gtid_);
@@ -184,7 +184,7 @@ TEST_F(TestAiChatBus, CheckHandleAiChatServiceResp_Failure)
     EXPECT_LOG_FEAT(LogFeature::AICHAT, 1);
 
     withCtx(
-        [](AiChatContext &ctx)
+        [](AiAgoraContext &ctx)
         {
             ctx.pendingReqSeq = 1;
             ctx.messageCount = 1;

@@ -1,3 +1,3 @@
 enum AccessType : uint8
-    AiChatCLI = 0
+    AiAgoraCLI = 0
     AiDiscussionCLI = 1

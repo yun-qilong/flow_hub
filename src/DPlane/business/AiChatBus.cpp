@@ -219,6 +219,6 @@ void AiChatBus<T>::appendAssistantMsg(ContextType &ctx, const std::string &conte
     ctx.messagesLen = newLen;
 }
 
-template class AiChatBus<common::TaskType::AiChat>;
+template class AiChatBus<common::TaskType::AiAgora>;
 
 } // namespace DPlane::business

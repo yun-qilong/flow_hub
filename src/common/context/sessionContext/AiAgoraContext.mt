@@ -1,4 +1,4 @@
-context AiChatContext
+context AiAgoraContext
     uint8[64] modelName
     double temperature
     int32 messagesLen

@@ -22,7 +22,7 @@ class SessionFlags
         uint8_t v = 0;
         switch (AT)
         {
-        case AppType::AiChat:
+        case AppType::AiAgora:
         case AppType::AiDiscussion:
             v = static_cast<uint8_t>(BitFlags::needAckBit);
             break;

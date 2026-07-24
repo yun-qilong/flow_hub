@@ -269,7 +269,7 @@ void CliAdapter::sendTaskCreate()
     common::message::TaskCreateReq req;
     fillHead(req);
     req.head.uid = currentUid_;
-    req.taskType = common::TaskType::AiChat;
+    req.taskType = common::TaskType::AiAgora;
     waiting_ = true;
     fw::anonSendTo(gatewayAddr(), std::move(req));
 }

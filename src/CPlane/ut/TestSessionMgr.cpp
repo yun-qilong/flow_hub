@@ -46,7 +46,7 @@ class TestSessionMgr : public fw::EoTestBase
     static constexpr common::AccessType kReqAccessType = kDefaultAccessType;
     static constexpr common::AccessType kSecondAccessType = static_cast<common::AccessType>(3);
     static constexpr common::AppType kReqAppType = kDefaultAppType;
-    static constexpr common::AppType kReqAppTypeAiChat = static_cast<common::AppType>(0);
+    static constexpr common::AppType kReqAppTypeAiAgora = static_cast<common::AppType>(0);
     static constexpr common::AppType kReqAppTypeAiDiscussion = static_cast<common::AppType>(1);
 
     static constexpr uint8_t kTestConnId = 42;
@@ -233,7 +233,7 @@ TEST_F(TestSessionMgr, CheckHandleSessionLifecycle)
         fillDefaultHead(c1);
         c1.head.uid = kUserUid;
         c1.head.appType = kReqAppTypeAiDiscussion;
-        c1.taskType = common::TaskType::AiChat;
+        c1.taskType = common::TaskType::AiAgora;
         sendToMe(std::move(c1));
         checkOutput<TaskCreateResp>(accessGateway_,
                                     [&](TaskCreateResp &msg)
@@ -251,7 +251,7 @@ TEST_F(TestSessionMgr, CheckHandleSessionLifecycle)
         fillDefaultHead(c2);
         c2.head.uid = kUserUid;
         c2.head.appType = kReqAppTypeAiDiscussion;
-        c2.taskType = common::TaskType::AiChat;
+        c2.taskType = common::TaskType::AiAgora;
         sendToMe(std::move(c2));
         checkOutput<TaskCreateResp>(accessGateway_,
                                     [&](TaskCreateResp &msg)
@@ -266,7 +266,7 @@ TEST_F(TestSessionMgr, CheckHandleSessionLifecycle)
         fillDefaultHead(c3);
         c3.head.uid = kUserUid;
         c3.head.appType = kReqAppTypeAiDiscussion;
-        c3.taskType = common::TaskType::AiChat;
+        c3.taskType = common::TaskType::AiAgora;
         sendToMe(std::move(c3));
         checkOutput<TaskCreateResp>(accessGateway_,
                                     [&](TaskCreateResp &msg)
@@ -348,7 +348,7 @@ TEST_F(TestSessionMgr, CheckHandleSessionLifecycle)
         c4.head.uid = kUserUid;
         c4.head.accessType = kSecondAccessType;
         c4.head.appType = kReqAppTypeAiDiscussion;
-        c4.taskType = common::TaskType::AiChat;
+        c4.taskType = common::TaskType::AiAgora;
         sendToMe(std::move(c4));
         checkOutput<TaskCreateResp>(accessGateway_,
                                     [&](TaskCreateResp &msg)
@@ -395,7 +395,7 @@ TEST_F(TestSessionMgr, CheckHandleSessionLifecycle)
         c5.head.uid = kUserUid;
         c5.head.accessType = kSecondAccessType;
         c5.head.appType = kReqAppTypeAiDiscussion;
-        c5.taskType = common::TaskType::AiChat;
+        c5.taskType = common::TaskType::AiAgora;
         sendToMe(std::move(c5));
         checkOutput<TaskCreateResp>(accessGateway_,
                                     [&](TaskCreateResp &msg)
@@ -438,7 +438,7 @@ TEST_F(TestSessionMgr, CheckHandleSessionLifecycle)
         fillDefaultHead(bad);
         bad.head.uid = 2;
         bad.head.accessType = kSecondAccessType;
-        bad.taskType = common::TaskType::AiChat;
+        bad.taskType = common::TaskType::AiAgora;
         sendToMe(std::move(bad));
         checkOutput<TaskCreateResp>(accessGateway_,
                                     [&](TaskCreateResp &msg)

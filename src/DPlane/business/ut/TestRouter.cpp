@@ -14,7 +14,7 @@ constexpr common::GTID kGtidIdx0 = 0x0001;
 constexpr common::GTID kGtidIdx1 = 0x0041;
 constexpr common::GTID kGtidIdx2 = 0x0081;
 constexpr common::GTID kAiChatGtid =
-    static_cast<common::GTID>((static_cast<uint16_t>(common::TaskType::AiChat) << 6) | 1);
+    static_cast<common::GTID>((static_cast<uint16_t>(common::TaskType::AiAgora) << 6) | 1);
 
 class TestRouter : public fw::EoTestBase
 {
