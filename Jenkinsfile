@@ -35,15 +35,18 @@ pipeline {
       steps {
         dir('src') {
           sh '''#!/bin/bash
+FAIL=0
 FILES=$(find . -name "*.cpp" -o -name "*.hpp" | grep -v "/generated/" | grep -v "/build/" | sort)
 for f in $FILES; do
   [ -f "$f" ] || continue
   if ! /usr/bin/clang-format-15 --dry-run --Werror "$f" 2>/dev/null; then
     echo ""; echo "==== FORMAT ISSUES: $f ===="
     diff -u "$f" <(/usr/bin/clang-format-15 "$f") 2>/dev/null || true
+    FAIL=1
   fi
 done
-echo "Format check complete"'''
+if [ "$FAIL" != "0" ]; then echo "Format check FAILED"; exit 1; fi
+echo "Format check passed"'''
         }
       }
     }

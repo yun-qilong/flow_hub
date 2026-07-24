@@ -44,7 +44,7 @@ class TestAiChatBus : public fw::EoTestBase
     void withCtx(F &&fn)
     {
         pool_.getContext<AiAgoraContext>(gtid_).useOrFailed([&](AiAgoraContext &ctx) { fn(ctx); },
-                                                           [] { FAIL() << "context not found"; });
+                                                            [] { FAIL() << "context not found"; });
     }
 
     template <typename M>
