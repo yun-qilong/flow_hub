@@ -48,7 +48,7 @@ fi
 SUBJECT=$(echo "$COMMIT_MSG" | head -1)
 
 # Extract Tag: [FTxxxx], [FXxxxx], [RIxxxx], or [None]
-TAG=$(echo "$SUBJECT" | grep -oP '^\[(FT\d{4}(-[A-Z])?|FX\d{4}|RI\d{4}|None)\]' | head -1 || true)
+TAG=$(echo "$SUBJECT" | grep -oP '^\[(FT\d{4}(-[A-Z](-Design)?)?|FX\d{4}|RI\d{4}|None)\]' | head -1 || true)
 
 if [[ -z "$TAG" ]]; then
   die "Subject must start with [FTxxxx], [FXxxxx], [RIxxxx], or [None].
