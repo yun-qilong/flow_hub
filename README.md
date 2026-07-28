@@ -8,6 +8,24 @@
 
 ---
 
+> **关于本仓库的两个"异常"指标：0 PR、大量 Open Issue。**
+>
+> **0 PR** — 代码审查通过本地部署的 Gerrit 完成。提交后自动触发 Jenkins CI 门禁流水线：
+> 编译 → 单元测试 → clang-format → clang-tidy，全部通过后才合入。
+> ![Jenkins CI](docs/pictures/jenkins-ci.png)
+> GitHub 侧同步相同的 CI 流程（上方 badge 可点击查看）。GitHub 仓库作为 Gerrit 的远程镜像，因此 PR 数为 0。
+>
+> **大量 Open Issue** — Issue 在此承担个人任务看板的角色。每个 design/feature 拆分为独立 Issue，用 Label 区分类型、Milestone 归组交付：
+> - `feature` — 新功能开发
+> - `fix` — 缺陷修复
+> - `refine&improvement` — 功能之外的优化（重构、文档、工程改进）
+>
+> Open 的 Issue 不是未解决的 bug，是 backlog 里规划中的任务。
+>
+
+
+---
+
 ## 架构
 
 ![Architecture](docs/architecture.drawio.svg)
@@ -75,9 +93,9 @@ Business D 面以 Router 为入口，Service D 面以 ServiceGateway 为入口�
 
 ## 关于本项目
 
-开发遵循文档先行的流程：需求 → ADR 决策记录 → 代码 → 单元测试。24 篇 ADR 记录了全部关键设计决策。
+开发遵循文档先行的流程：需求 → ADR 决策记录 → 代码 → 单元测试。24 篇 ADR（`docs/adr/`）记录了全部关键设计决策。
 
-本地搭建了 Gerrit 代码审查 + CI 门禁流水线，提交后自动触发编译、单元测试、clang-format 格式检查和 clang-tidy 静态分析。GitHub 侧同步相同的 CI 流程。个人项目用 Gerrit 看似小题大做——但代码审查和自动化门禁不是团队才需要的仪式，是工程习惯。
+CI 门禁流水线（编译 → 单元测试 → clang-format → clang-tidy）在 Gerrit 和 GitHub 两侧同步运行。代码审查和自动化门禁不是团队才需要的仪式，是工程习惯。
 
 ---
 
