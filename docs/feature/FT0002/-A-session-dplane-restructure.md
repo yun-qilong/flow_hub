@@ -94,32 +94,42 @@ flowchart TD
 
 ---
 
-## 三、消息头精简
+## 三、消息头重构
 
 消息结构详见 [messages 文档](../../construct/messages.md)。
 
-### 3.1 清理前后对比
+### 3.1 重构前后对比
 
 | 字段 | 旧 | 新 | 原因 |
 |------|----|----|------|
 | `uid` | `uint16_t` | ❌ 删除 | 随用户系统一并移除 |
-| `gtidList` | `vector<GTID>` | ♻️ 拆分 | — |
-| `gtid` | — | ✅ `GTID` | 单 GTID 传递，覆盖 90% 场景 |
-| `fanoutList` | — | ✅ `vector<GTID>` | 多 GTID 场景（后续 subfeature 使用） |
+| `gtidList` | `vector<GTID>` | ♻️ 拆分 | 语义模糊：既表示"我是谁"也表示"发给谁" |
+| `sessionTaskId` | — | ✅ `GTID` | Session 层 Task 的 GTID，标识消息来源，用于回程路由 |
+| `busTaskIds` | — | ✅ `vector<GTID>` | 目标 BusTask GTID 列表，Router 据此 fan-out |
 | `accessType` | `AccessType` | ❌ 删除 | 路由改用 GTID→Adapter 映射表 |
 | `appType` | `AppType` | ❌ 删除 | 随用户系统移除，语义冗余 |
 | `sessionFlags` | `SessionFlags` | ❌ 删除 | ACK 机制随跨端同步一并移除 |
 | `targets` | `uint64_t` | ❌ 删除 | fan-out 位图随 userAccessBitset 移除 |
 
-### 3.2 清理后结构
+### 3.2 重构后结构
 
 ```
 struct UserHead
-    GTID gtid
-    vector<GTID> fanoutList
+    GTID sessionTaskId
+    vector<GTID> busTaskIds
 ```
 
-`fanoutList` 为空表示无需 fan-out，自然充当 optional 语义。
+- `sessionTaskId`：标识消息来源（Session 层 Task），用于回程路由
+- `busTaskIds`：目标 BusTask GTID 列表。单 AI 场景长度 = 1，多 AI 场景长度 > 1
+
+### 3.3 Router fan-out 行为
+
+Router 收到消息后遍历 `busTaskIds`，对每个 GTID：
+
+1. **复制消息**，将副本的 `busTaskIds` **替换为仅含当前 GTID 的单元素列表**
+2. 查路由表（`GTID >> 6`） → delegate 给对应 Bus EO
+
+这样 Bus 层 EO 视角永远一致——`busTaskIds` 始终是单元素列表，直接 `busTaskIds.at(0)` 即知自己要处理哪个 Task。无论上游是 1 对 1 还是 fan-out。
 
 ---
 
@@ -135,7 +145,7 @@ struct UserHead
 |------|------|
 | `TaskCreateReq` 经过 Gateway 时 | 将来源 Adapter 地址填入 `cookie` 字段，转发给 SessionMgr |
 | `TaskCreateResp` 到达 Gateway 时 | 从 `cookie` 读取目标 Adapter，对 `gtids` 逐条写入映射表，转发给 Adapter |
-| 业务响应（`AiChatBusinessResp`）到达时 | 查 `gtidToAdapter_[head.gtid]`，`delegateTo` 到对应 adapter |
+| 业务响应（`AiChatBusinessResp`）到达时 | 查 `gtidToAdapter_[head.sessionTaskId]`，`delegateTo` 到对应 adapter |
 | `TaskDeleteReq` 经过 Gateway 时 | 对 `gtids` 逐条删除映射表条目，转发给 SessionMgr |
 
 **优势**：GTID 天然唯一，无需额外的前端类型枚举。后续多前端时，Gateway 在转发 `TaskCreateReq` 时记住来源 adapter 即可，无需 `AccessType` 概念。
@@ -196,7 +206,7 @@ struct UserHead
 |------|---------------|
 | -B（编排器契约） | SessionDispatcher 框架 + AiDiscussOrchest 空壳，-B 直接填充路由表和编排逻辑 |
 | -C（Web 前端） | 简化的 `AccessAdapterBase` + GTID→Adapter 映射表，新增 Web Adapter 只需继承基类 |
-| -D（多 AI 辩论） | `fanoutList` 字段预留，AiDiscussOrchest 已就位 |
+| -D（多 AI 辩论） | `busTaskIds` 字段预留，AiDiscussOrchest 已就位 |
 | -G（Context 精简） | ACK 已删，减少一条清理项 |
 
 ---

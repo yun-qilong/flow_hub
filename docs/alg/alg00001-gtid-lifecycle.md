@@ -40,7 +40,7 @@ GTID 合成：`gtid = (taskType << 6) | index`
 - [TaskCreateReq](../construct/messages.md#taskcreatereq)
 - [TaskCreateResp](../construct/messages.md#taskcreateresp)
 - [TaskDeleteReq](../construct/messages.md#taskdeletereq)
-- [TaskCreateCookie](../construct/messages.md#taskcreatecookie)
+
 
 ---
 
@@ -101,6 +101,5 @@ SessionMgr 是单线程 actor。分配/回收在消息循环中串行执行。
 |------|------|
 | `requestNum` > 空闲槽位数 | 返回 `isSuccess=false`，打印 `WRN` 日志，零分配 |
 | `requestNum` = 0 | 返回 `isSuccess=false`，打印 `ERR` 日志 |
-| 池满 | 同"空闲不足"，打印 `WRN` 日志 |
 | 回收时 `index` 超出 0~63 | 不做校验 |
 | 重复回收 | 无副作用 |
