@@ -89,7 +89,7 @@ fi
 TAG_CLEAN=$(echo "$TAG" | tr -d '[]')
 EXPECTED_TAG_LINE="**Tag**: $TAG_CLEAN"
 
-if grep -qP "\*\*Tag\*\*:\s*${TAG_CLEAN}(?![-A-Za-z0-9])" /tmp/issue_body.json 2>/dev/null; then
+if grep -qP "\*\*Tag:?\*\*:?\s*${TAG_CLEAN}(?![-A-Za-z0-9])" /tmp/issue_body.json 2>/dev/null; then
   echo "✓ Tag-Issue cross-validation passed"
 
   # Check if issue is closed (strict mode only)
