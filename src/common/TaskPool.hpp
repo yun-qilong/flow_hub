@@ -76,7 +76,7 @@ utils::Result<Ctx &> TaskPool::getContext(GTID gtid)
     if (FH_LIKELY(gtidType == expectedType))
     {
         uint8_t idx = extractIndex(gtid);
-        return utils::Result<Ctx &>(std::get<ContextManager<Ctx, kIndexCount>>(managers_).get(idx));
+        return std::get<ContextManager<Ctx, kIndexCount>>(managers_).get(idx);
     }
     return std::nullopt;
 }
@@ -90,8 +90,7 @@ utils::Result<const Ctx &> TaskPool::getContextRead(GTID gtid) const
     if (FH_LIKELY(gtidType == expectedType))
     {
         uint8_t idx = extractIndex(gtid);
-        return utils::Result<const Ctx &>(
-            std::get<ContextManager<Ctx, kIndexCount>>(managers_).getRead(idx));
+        return std::get<ContextManager<Ctx, kIndexCount>>(managers_).getRead(idx);
     }
     return std::nullopt;
 }

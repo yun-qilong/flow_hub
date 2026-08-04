@@ -33,7 +33,6 @@ class StaticBitMap
 
     using StorageType = std::conditional_t<kStorageProvided, StorageT, DeducedStorage>;
 
-    // 编译期算最大位宽，避免 sizeof(void)
     static constexpr size_t kMaxBits = []() constexpr -> size_t
     {
         if constexpr (kStorageProvided)
@@ -63,6 +62,7 @@ class StaticBitMap
     }();
 
     StorageType mask_ = 0;
+    size_t nextIndex_ = 0;
 
   public:
     StaticBitMap() noexcept = default;
@@ -80,9 +80,9 @@ class StaticBitMap
             return -1;
         }
 
-        uint64_t validPositions =
-            (~static_cast<uint64_t>(mask_)) & static_cast<uint64_t>(kFullMask);
-        int idx = __builtin_ctzll(validPositions);
+        uint64_t rotatedValidPositions = maskRotateRight(nextIndex_);
+        int idx = (__builtin_ctzll(rotatedValidPositions) + nextIndex_) % BitCount;
+        nextIndex_ = (idx + 1) % BitCount;
         mask_ |= static_cast<StorageType>(static_cast<StorageType>(1) << idx);
         return idx;
     }
@@ -130,11 +130,22 @@ class StaticBitMap
     void clear() noexcept
     {
         mask_ = 0;
+        nextIndex_ = 0;
     }
 
     [[nodiscard]] StorageType mask() const noexcept
     {
         return mask_;
+    }
+
+  private:
+    uint64_t maskRotateRight(size_t shift) const noexcept
+    {
+        uint64_t validPositions =
+            (~static_cast<uint64_t>(mask_)) & static_cast<uint64_t>(kFullMask);
+
+        uint64_t lowBits = validPositions & ((static_cast<uint64_t>(1) << shift) - 1);
+        return (lowBits << ((BitCount - shift) % BitCount)) | (validPositions >> shift);
     }
 };
 

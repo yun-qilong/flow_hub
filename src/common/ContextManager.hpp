@@ -13,6 +13,7 @@
 
 #pragma once
 
+#include "utils/Result.hpp"
 #include "utils/StaticBitMap.hpp"
 
 #include <array>
@@ -39,8 +40,8 @@ class ContextManager
 
     void deallocate(int idx) noexcept;
 
-    [[nodiscard]] Ctx &get(int idx) noexcept;
-    [[nodiscard]] const Ctx &getRead(int idx) const noexcept;
+    [[nodiscard]] utils::Result<Ctx &> get(int idx) noexcept;
+    [[nodiscard]] utils::Result<const Ctx &> getRead(int idx) const noexcept;
 
     [[nodiscard]] int countFree() const noexcept
     {
@@ -75,15 +76,24 @@ void ContextManager<Ctx, Capacity>::deallocate(int idx) noexcept
 }
 
 template <typename Ctx, size_t Capacity>
-[[nodiscard]] Ctx &ContextManager<Ctx, Capacity>::get(int idx) noexcept
+[[nodiscard]] utils::Result<Ctx &> ContextManager<Ctx, Capacity>::get(int idx) noexcept
 {
-    return contexts_[static_cast<size_t>(idx)];
+    if (bitmap_.isUsed(idx))
+    {
+        return utils::Result<Ctx &>(contexts_.at(static_cast<size_t>(idx)));
+    }
+    return std::nullopt;
 }
 
 template <typename Ctx, size_t Capacity>
-[[nodiscard]] const Ctx &ContextManager<Ctx, Capacity>::getRead(int idx) const noexcept
+[[nodiscard]] utils::Result<const Ctx &>
+ContextManager<Ctx, Capacity>::getRead(int idx) const noexcept
 {
-    return contexts_[static_cast<size_t>(idx)];
+    if (bitmap_.isUsed(idx))
+    {
+        return utils::Result<const Ctx &>(contexts_.at(static_cast<size_t>(idx)));
+    }
+    return std::nullopt;
 }
 
 } // namespace common
