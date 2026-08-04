@@ -9,6 +9,15 @@
 > - `turnCount` 由 `messageCount` 取代（ADR-0020）
 > - `businessReplyAddr` 引用的 `sourceAddress` 字段已被 [ADR-0024](../adr/0024-head-accesstype-reuse.md) 移除
 > - 对话历史存储机制（messagesBuffer）和消息体传递 JSON 字符串的决策仍然有效
+>
+> **修订（2026-07-30）**：
+> - **架构变化**：本 ADR 最初的决策背景是 AiChatBus 作为单 AI 对话的唯一执行者，自行管理完整生命周期——接收用户消息、维护对话历史、调用 AI API、回复结果。FT0002-B 引入 Session 层编排器（AiAgora）后，架构职责重新划分：Session 层负责一个话题的全局编排（上下文维护、轮次控制、多 AI 协调），Bus 层退化为子任务执行器——接收编排器组装好的 messages JSON，调用 API，返回结果，不维护历史。
+> - **决策逻辑**：职责上移自然导致数据上移。对话历史（`messagesBuffer`）跟随编排职责从 Bus 层迁至 Session 层的 `topicBaseJson`（ADR-0009 分层权限修订为此提供了规则基础）。Bus 层 Context 随之精简，去掉四个不再需要的字段：
+>   - `messagesBuffer` + `messageOffsets` + `messageCount`：这三个服务于 ADR-0020 引入的 seq 版本控制机制——在旧并发模型下，同一 GTID 可能同时有多条消息在飞行，需要用 seq 编号和偏移索引区分各条消息的处理状态。新架构下编排器状态机串行推进（`waitingForTopic → waitingForDebateReplies → ...`），每个状态只等一件事，不存在并发抢占。对话历史本身已迁至 `topicBaseJson`。
+>   - `pendingReqSeq`：同样服务于并发抢占——用于区分"当前在等的请求"和"已过时的旧请求"。串行模型下不需要。
+>   - 这四个字段的底层驱动力（多前端并发 + ACK 同步）已在 FT0002-A 随用户系统移除。
+> - **本质**：这不是"删几个字段"的局部优化，而是 Context 所有权随编排职责从 Bus 层向 Session 层迁移的结构性调整。Bus Context 不再"拥有"对话，只"使用"对话。
+> - 修订依据：FT0002-B 设计，ADR-0009 分层权限修订。
 
 ---
 
@@ -47,24 +56,35 @@ Context 存的内容（示例）：
 
 ### 4. Context 静态内存
 
+**AiChatContext**（Bus 层，2026-07-30 修订）：
+
 ```
 AiChatContext（.mt 定义）：
   uint8[64]    modelName         定长 model 名
+  uint8[128]   apiUrl            API 端点
+  uint8[128]   apiKey            API 密钥
   double       temperature       温度参数
-  int32        messagesLen       已用字节数
-  uint8[16384] messagesBuffer    16KB JSON 缓冲区（不含 [] 外壳）
-  EoAddress    businessReplyAddr 回复目标地址（从 req.head.sourceAddress 写入，回复后清空）
-  uint16[256]  messageOffsets    每条消息在 buffer 中的起始字节偏移（seq→offset）
-  uint8        messageCount      当前消息总数（= 下一条消息的 seq）
-  uint16       pendingReqSeq     当前等待回复的请求版本号，0 = 无等待
+  AiIndex      aiIndex           AI 身份编号（0~7 为参辩 AI，0xFF=裁判）
+  EoAddress    businessReplyAddr 回复目标地址（→ sessionDispatcherAddr_）
 ```
 
-- `messageOffsets[seq]` 记录 seq 对应的消息在 `messagesBuffer` 中的起始字节偏移
-  - seq=0（首条用户消息）：偏移 = system prompt 长度（~65 字节）
-  - seq≥1：偏移 = 写入前 `messagesLen + 1`（逗号分隔符之后）
-- `messageCount` 为 0-based，每次写入消息时 `allocateAndRecordSeq()` 先取值再自增
-- `pendingReqSeq` 替代了原 `AiChatStage` 枚举：`== 0` 表示空闲，`!= 0` 表示等待回复
-- 已废弃字段：`turnCount`（由 messageCount 取代）、`stage`（由 pendingReqSeq 取代）
+**已废弃字段**（2026-07-30）：
+
+| 字段 | 原用途 | 废弃原因 |
+|------|------|------|
+| `messagesBuffer[16384]` | 16KB 对话历史缓冲区 | 历史上移至 Session 层 `topicBaseJson`（1MB） |
+| `messageOffsets[256]` | seq→buffer 偏移索引 | 随 messagesBuffer 废弃 |
+| `messageCount` | 消息计数 | 随 messagesBuffer 废弃 |
+| `pendingReqSeq` | 请求版本号，用于抢占控制 | 新架构下无并发抢占场景 |
+
+**新增字段**：
+
+| 字段 | 用途 |
+|------|------|
+| `apiUrl` | 从 `AiChatConfigReq.payload` 解析写入 |
+| `apiKey` | 从 `AiChatConfigReq.payload` 解析写入 |
+| `aiIndex` | 从 `AiChatConfigReq.aiIndex` 写入，`AiChatResp` 携带回编排器 |
+| `systemPrompt` | 从 `AiChatConfigReq.systemPrompt` 写入。每次发 API 请求时作为 `messages[0]` |
 
 ### 5. 消息流转与 seq 版本控制
 

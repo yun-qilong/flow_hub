@@ -7,7 +7,7 @@
 
 ---
 
-## 一、背景
+## 1. Background
 
 GTID 是 16-bit 无符号整数，格式如下（ADR-0008）：
 
@@ -21,85 +21,82 @@ GTID 是 16-bit 无符号整数，格式如下（ADR-0008）：
 
 `TaskType` 域（bit[11:6]）标识任务类型，`Index` 域（bit[5:0]）为同类型下的实例编号，最多 64 个。
 
-SessionMgr 是 GTID 分配与回收的唯一入口。请求方可批量申请多个同 TaskType 的 GTID，也可批量回收。请求来源有两类：Access 层（前端经 Adapter）和 Session 层（编排器）。
+SessionMgr 是 GTID 分配与回收的唯一入口。SessionTask 逐个分配（`TaskCreateReq`），BusTask 批量分配（`BusTaskCreateReq`）。回收同理。
 
 ---
 
-## 二、池模型
+## 2. Pool Model
 
 按 `TaskType` 分池。每池管理 64 个槽位（对应 Index 域 0~63），标记占用/空闲。
 
-GTID 合成：`gtid = (taskType << 6) | index`
+GTID 合成：`gtid = (category << 12) | (taskType << 6) | index`
+
+### 2.1 递增分配
+
+分配策略为**递增轮转**：每池维护一个 `nextIndex` 游标，从 0 起始。每次分配时从游标位置向后查找第一个空闲槽位，分配后游标推进到该位置 +1。游标达 63 后回绕到 0。
+
+此策略避免刚回收的 GTID 被立即重新分配。若存在超时未清理的旧任务仍持有该 GTID，同时新 task 分配到同一 GTID，将导致新旧两个 task 同时操作同一 Context。
+
+> 相关修复：RI0003 (#22)
 
 ---
 
-## 三、消息定义
+## 3. Messages
 
-消息结构详见 messages 文档：
-
-- [TaskCreateReq](../construct/messages.md#taskcreatereq)
-- [TaskCreateResp](../construct/messages.md#taskcreateresp)
-- [TaskDeleteReq](../construct/messages.md#taskdeletereq)
-
-
----
-
-## 四、分配
-
-### 4.1 原子校验
-
-SessionMgr 收到 `TaskCreateReq` 后，先检查 `taskType` 对应池的剩余空闲槽位数 ≥ `requestNum`。不足则**一个都不分配**，返回 `isSuccess=false`。
-
-### 4.2 分配步骤
-
-1. 校验 `requestNum` ≤ 空闲槽位数，不满足则返回失败
-2. 从池中取 `requestNum` 个空闲 index（最低空闲位优先）
-3. 标记这些 index 为已占用
-4. 按 `(taskType << 6) | index` 逐个合成 GTID，填入 `gtids`
-5. 为每个分配的 GTID 创建 Context
-6. 将 `cookie` 从请求原样拷贝到响应
-7. 返回 `isSuccess=true`
+| 消息 | 用途 |
+|------|------|
+| `TaskCreateReq` / `TaskCreateResp` | 申请单个 SessionTask GTID |
+| `BusTaskCreateReq` / `BusTaskCreateResp` | 批量申请 BusTask GTID |
+| `TaskDeleteReq` | 回收单个 SessionTask GTID（无直接响应） |
+| `BusTaskDeleteReq` / `BusTaskDeleteResp` | 批量回收 BusTask GTID |
 
 ---
 
-## 五、回收
+## 4. Allocation
 
-### 5.1 处理
+### 4.1 SessionTask（`TaskCreateReq`）
 
-SessionMgr 收到 `TaskDeleteReq`，对 `gtids` 中每个 GTID：
+单个分配。SessionMgr 检查 `taskType` 对应池有空闲槽位则分配一个 index，合成 GTID 填入 `TaskCreateResp.head.sessionTaskId`。无空闲则 `isSuccess=false`。
 
-1. 提取 `taskType = gtid >> 6`，`index = gtid & 0x3F`
-2. 在对应池中标记该 index 为空闲
-3. 销毁该 GTID 的 Context
+### 4.2 BusTask（`BusTaskCreateReq`）
 
-### 5.2 无响应
+批量分配。SessionMgr 遍历 `taskTypes`，逐个分配。
 
-回收不产生响应消息。发送方不等待确认。
+**原子性约束**：若任一个分配失败（空闲不足），已分配的 GTID 全部回收，回复 `BusTaskCreateResp{isSuccess=false}`。全部成功则 `isSuccess=true`，`head.busTaskIds` 与 `taskTypes` 一一对应。
 
-### 5.3 幂等
+---
+
+## 5. Deallocation
+
+### 5.1 SessionTask（`TaskDeleteReq`）
+
+SessionMgr 收到后提取 `head.sessionTaskId` 的 `taskType` 和 `index`，标记槽位为空闲，回收 Context。无直接响应——编排器负责回复前端 `TaskDeleteResp`（详见 alg00008）。
+
+### 5.2 BusTask（`BusTaskDeleteReq`）
+
+SessionMgr 遍历 `head.busTaskIds`，逐个回收槽位 Context。回复 `BusTaskDeleteResp{isSuccess}`。
 
 重复回收无副作用。标记已空闲的位再次标记不产生错误。
 
 ---
 
-## 六、Context 绑定
+## 6. Context Binding
 
 - 分配 GTID 时，按 `TaskType` 推导 Context 类型，创建并初始化
 - 回收 GTID 时，销毁 Context
 
 ---
 
-## 七、并发
+## 7. Concurrency
 
 SessionMgr 是单线程 actor。分配/回收在消息循环中串行执行。
 
 ---
 
-## 八、边界条件
+## 8. Boundary Conditions
 
 | 输入 | 行为 |
 |------|------|
-| `requestNum` > 空闲槽位数 | 返回 `isSuccess=false`，打印 `WRN` 日志，零分配 |
-| `requestNum` = 0 | 返回 `isSuccess=false`，打印 `ERR` 日志 |
-| 回收时 `index` 超出 0~63 | 不做校验 |
+| `taskTypes` 长度超过空闲槽位数 | 返回 `isSuccess=false`，零分配 |
+| `taskTypes` 为空 | 返回 `isSuccess=false` |
 | 重复回收 | 无副作用 |

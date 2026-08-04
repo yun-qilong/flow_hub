@@ -45,6 +45,7 @@ flowchart TD
 | **-E** | -E-adapter-multithreading.md | AiApiAdapter 多线程支持 | 并发子任务不互相阻塞 |
 | **-F** | -F-service-scheduler.md | ServiceGateway→ServiceScheduler，round-robin | 多 adapter 均匀分配请求 |
 | **-G** | -G-context-slim-down.md | Context 精简：历史前移 | Context 大小恒定，不随轮次增长 |
+| **-I** | -I-request-cancellation.md | 请求取消机制：cancel 在途请求 + 取消握手，规避迟到回复失序 | 超时/Reset/中断后无迟到回复串台 |
 
 ### 依赖关系
 
@@ -57,12 +58,14 @@ flowchart TD
     D --> G[-G Context精简]
     E[-E Adapter多线程]
     F[-F ServiceScheduler]
+    E --> I[-I 请求取消]
 ```
 
 - -H 定义 GTID 分类与枚举，-A 依赖它进行 Session/Bus 分层路由。
 - -B 依赖 -A；-C 和 -D 都依赖 -B，但 -C 与 -D 彼此平行。
 - -E、-F 独立，不依赖其他 subfeature，也不被其他依赖。
 - -G 依赖 -D（全流程跑通后再优化 Context）。
+- -I 依赖 -E（取消机制建立在 AiApiAdapter 多线程之上），详细设计见 `notes/FT0002-I-ROADMAP.md`。
 
 ---
 

@@ -1,88 +1,75 @@
-# alg00002：GTID→Adapter 映射
+# alg00002：AccessGateway Routing
 
 | 属性 | 值 |
 |------|-----|
 | 编号 | alg00002 |
-| 对应 Subfeature | FT0002-A |
+| 对应 Subfeature | FT0002-A, FT0002-B |
 
 ---
 
-## 一、背景
+## 1. Background
 
-业务响应从 Session 层回传时，Gateway 需将其路由到正确的 Adapter。GTID 是每个 Task 的唯一标识——Gateway 利用此性质建立映射表，无需消息头额外携带 Adapter 标识。
+AccessGateway 是 Access 层的消息枢纽，承担两个方向的寻址：
 
----
-
-## 二、数据结构
-
-`AccessGateway` 维护一个静态数组作为映射表：
-
-| 属性 | 说明 |
-|------|------|
-| 数组大小 | 所有 Session-task GTID 的总数，即 `0x7000~0x7FFF`，共 `4096` 个 |
-| 元素类型 | Adapter 的 `EoAddress`，空地址表示无映射 |
-| 索引方式 | `gtid & 0x0FFF`——GTID 低 12 位直接作为数组下标 |
-
-转换关系：
-
-- GTID 低 12 位 = `(TaskType << 6) | Index`
-- 每个 TaskType 占据数组中连续 64 个槽位
-- 不同 TaskType 之间无重叠——TaskType 域已在 GTID 中编码 |
+1. **下行**（Adapter → Session 层）：按消息类型分发——C 面消息（`TaskCreateReq`）转发给 `SessionMgr`，D 面消息（其余，含 `TaskDeleteReq`）转发给 `SessionDispatcher`。
+2. **上行**（Session 层 → Adapter）：使用 GTID→Adapter 映射表将回复路由回正确的 Adapter。
 
 ---
 
-## 三、写入
+## 2. Downlink Routing
 
-### 3.1 Cookie
+| 消息类型 | 分类 | 转发目标 |
+|------|:--:|------|
+| `TaskCreateReq` | C 面 | SessionMgr |
+| `TaskDeleteReq` | D 面 | SessionDispatcher |
+| `TaskConfigReq` | D 面 | SessionDispatcher |
+| `AiAgoraChatReq` | D 面 | SessionDispatcher |
+| `AiAgoraResetReq` | D 面 | SessionDispatcher |
+| 其他 D 面消息 | D 面 | SessionDispatcher |
 
-`TaskCreateReq` 和 `TaskCreateResp` 均携带 `cookie`（`TaskCreateCookie`）。Gateway 转发 `TaskCreateReq` 时将来源 Adapter 地址填入；SessionMgr 原样拷贝到 `TaskCreateResp`。Gateway 收到响应后从 `cookie` 读取目标地址。
-
-### 3.2 时机
-
-Gateway 收到 `TaskCreateResp{gtids, isSuccess=true, cookie}`：
-
-1. 从 `cookie` 提取 Adapter 地址——若为空则打印 `ERR` 日志并丢弃
-2. 对 `gtids` 中每个 GTID 写入：`map[gtid] = adapter`
-3. 将 `TaskCreateResp` 转发给该 Adapter
-
-### 3.3 失败
-
-`isSuccess=false` 时不写映射表，仅转发失败响应给 Adapter。
+SessionMgr 和 SessionDispatcher 的地址通过配置注入。
 
 ---
 
-## 四、查询
+## 3. Uplink Routing
 
-Gateway 收到 `AiChatBusinessResp`，以 `head.gtid` 查映射表：
+### 3.1 主路径：gtidToAdapter_ 映射表
 
-- 命中 → 转发给对应 Adapter
-- 未命中 → 打印 `ERR` 日志，丢弃消息
+上行消息携带 `head.sessionTaskId`，AccessGateway 据此查找目标 Adapter。
+
+Session-task GTID 编码为 16-bit，其中低 12 位由 `(TaskType << 6) | Index` 构成。Session-task 的 GTID 范围为 `0x7000~0x7FFF`，恰好 4096 个。因此一个 4096 槽位的数组即可覆盖全部：
+
+```
+index = gtid & 0x0FFF
+gtid  = 0x7000 | index
+```
+
+`gtidToAdapter_` 为 `EoAddress` 定长数组，以 `index` 为下标。空地址表示无映射。
+
+AccessGateway 收到任何携带 `head.sessionTaskId` 的 Session 层回复时，查表转发。
+
+### 3.2 映射表写入：TaskCreate Cookie
+
+`TaskCreateReq` 到达时尚未分配 GTID，`sessionTaskId` 为 `kInvalidGtid`，无法查映射表。AccessGateway 在此消息的 `cookie.adapterAddr` 中填入来源 Adapter 的地址，随消息一路携带到 SessionMgr。
+
+`TaskCreateResp` 返回时携带同一个 `cookie`，新分配的 GTID 位于 `head.sessionTaskId`。AccessGateway 处理流程：
+
+1. 若 `isSuccess=false`：直接转发 `TaskCreateResp` 给 `cookie.adapterAddr`。不写映射表。
+2. 若 `isSuccess=true`：写入 `gtidToAdapter_[head.sessionTaskId & 0x0FFF] = cookie.adapterAddr`。转发给 Adapter。
+
+### 3.3 删除
+
+AccessGateway 收到 `TaskDeleteResp` 时，清除 `head.sessionTaskId` 对应的 `gtidToAdapter_` 映射条目，然后转发给前端。
 
 ---
 
-## 五、删除
-
-Gateway 收到 `TaskDeleteReq{gtids}`，在转发给 SessionMgr 前：
-
-1. 对 `gtids` 中每个 GTID 删除映射条目
-2. 转发给 SessionMgr
-
-无响应消息，不等待确认。
-
----
-
-## 六、并发
-
-Gateway 是单线程 actor。映射表所有操作在消息循环中串行执行。
-
----
-
-## 七、边界条件
+## 4. Boundary Conditions
 
 | 输入 | 行为 |
 |------|------|
-| `cookie` 为空 | 打印 `ERR`，丢弃 |
-| `isSuccess=false` | 不写映射表，转发失败响应 |
-| 查询时 `gtid` 不在映射表中 | 打印 `ERR`，丢弃 |
-| 同一 `gtid` 重复写入 | 覆盖 |
-| 删除时 `gtid` 不在映射表中 | 无操作 |
+| 未知消息类型 | 日志告警，丢弃 |
+| `cookie.adapterAddr` 为空 | Session 层发起，跳过写入 |
+| `isSuccess=false` | 不写映射表 |
+| 查询未命中 | 日志告警，丢弃 |
+| 重复写入 | 覆盖 |
+| 删除时不存在 | 无操作 |

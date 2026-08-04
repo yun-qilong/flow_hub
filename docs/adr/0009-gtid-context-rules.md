@@ -4,6 +4,12 @@
 |------|------|--------|
 | 已采纳 | 2026-06-01 | 韵启龙 |
 
+> **修订（2026-07-30）**：
+> - **架构变化**：Session 层 D 面从被动透传升级为主动编排。原 SessionData 仅做消息转发，不存在"Session 层业务状态"的概念，因此原规则"仅 Business 层 D 面 EO 可读写 Context"成立。引入编排器（AiAgora）后，Session 层被赋予全新职责——一个 Session Task 通过编排器将复杂任务拆解为多个 Bus 层子任务执行，编排过程本身需要维护状态（子任务 GTID 列表、等待位图、辩论轮次、上下文历史等）。Session 层从此有了自己的 Context 需求。
+> - **决策逻辑**：如果维持"仅 Bus 层可读写"的旧规则，编排器要么把 Session 级状态塞进 Bus Context（语义错乱），要么在自身成员变量中维护（多 Session 并发时互相覆盖）。最干净的方案是承认分层事实——**每层管理自己 TaskType 的 Context**。这并非推翻旧规则，而是架构演进后的自然外推：旧规则的本质是"谁执行任务谁持有 Context"，新架构下 Session 层也在执行编排任务。
+> - **边界约束**：统一入口组件（SessionDispatcher、Router）仍是纯路由基础设施，不持有 Context 访问权——它们不执行任务，只做路由，与旧规则精神一致。跨层操作通过消息委托完成，不设直接访问例外。
+> - 修订依据：FT0002-B 设计。
+>
 > **修订（2026-06-15，更新于 2026-07-01）**：
 > - §5（虚拟 ID 分配）被 [ADR-0011](../adr/0011-gtid-routing-key.md) 废弃——GTID 的 TaskType 位直接作为 Router 路由键，不再需要 SessionMgr 向 BusinessMgr 单独申请虚拟 ID。
 > - §4 的映射表概念由 [ADR-0019](../adr/0019-router-route-table.md) 细化为定长数组 `routeTable_[TaskType] = EoAddress` 的实现，路由表条目值可动态更改以支持未来负载均衡和热备切换。
@@ -38,15 +44,27 @@ main()
        └─ 传给 BusinessMgr          // 负载均衡可能需查询
 ```
 
-### 2. Context 读写权限：仅 Business 层 D 面 EO
+### 2. Context 读写权限：分层管理（2026-07-30 修订）
 
-| 角色 | 权限 | 说明 |
-|------|------|------|
-| Business 层 D 面 EO | 读 + 写 | 收到消息 → 按 GTID 取 Context → 决策 → 结果写回 |
-| SessionMgr（C 面） | 创建 + 销毁 | 管理 GTID 和对应 Context slot 的生命周期 |
-| 其他层/面 | 无权限 | 不允许直接访问 Context |
+> **原规则**（2026-06-01）：仅 Business 层 D 面 EO 有权读写 Context。此规则在 Session 层仅有透传 EO（SessionData）时成立，但引入 Session 层编排器（AiAgora）后不再适用——Session 层有了自己的 Context，需要明确分层权限。
 
-**原子性规则**：EO 在处理一条消息的过程中，所有 Context 修改必须与该消息的处理原子绑定——即处理完一条消息后统一写回，禁止在处理中间过程中修改 Context。日志/可观测性写入不受此约束。
+**分层读写权限**：
+
+| 角色 | Session Context | Bus Context | System Context |
+|------|:---:|:---:|:---:|
+| Session 层 D 面业务 EO（如 AiAgora） | 读+写 | 不可访问 | — |
+| Bus 层 D 面业务 EO（如 AiChatBus） | 不可访问 | 读+写 | — |
+| SessionDispatcher（Session 统一入口） | 不可访问 | 不可访问 | — |
+| Router（Bus 统一入口） | 不可访问 | 不可访问 | — |
+| SessionMgr（C 面） | 创建+销毁 | 创建+销毁 | — |
+
+**关键约束**：
+- 统一入口组件（SessionDispatcher、Router）是**纯路由基础设施**，不持有 Context 访问权。它们只做消息路由（按 `sessionTaskId` 或 `busTaskIds` 查表 delegate），不读写任何 Context。
+- 跨层 Context 操作通过**消息委托**完成。例：Session 层编排器通过 `AiChatConfigReq` 消息委托 Bus 层 EO 初始化 Bus Context，不直接写入。
+- 不设例外规则，不做编译期访问控制（如 `friend`/token）。
+- System Context 权限暂不定义——当前无 System 类型 Task，等有需求时再追加。
+
+**原子性规则**（不变）：EO 在处理一条消息的过程中，所有 Context 修改必须与该消息的处理原子绑定。
 
 ### 3. Context 并发控制
 
