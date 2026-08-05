@@ -48,33 +48,48 @@ class Router : public fw::EoBase<Router>
     template <typename Msg>
     void routeAndForward(Msg msg, const char *msgName)
     {
-        const auto &list = msg.head.gtidList;
-        size_t n = list.size();
-        if (n == 0)
+        const auto &list = msg.head.busTaskIds;
+        if (list.empty())
         {
-            LG_ERR("empty gtidList, dropping %s", msgName);
+            LG_ERR("empty busTaskIds, dropping %s", msgName);
             return;
         }
 
-        for (size_t i = 0; i < n - 1; ++i)
+        routeCopies(msg, list.size() - 1, msgName);
+        routeLast(std::move(msg), msgName);
+    }
+
+    template <typename Msg>
+    void routeCopies(const Msg &msg, size_t copyCount, const char *msgName)
+    {
+        const auto &list = msg.head.busTaskIds;
+        for (size_t i = 0; i < copyCount; ++i)
         {
             auto addr = getTargetEoAddress(list.at(i));
             if (addr)
             {
+                auto copy = Msg{msg};
+                copy.head.busTaskIds = {list.at(i)};
                 LG_DBG("routing %s to Business EO (copy)", msgName);
-                sendTo(addr, Msg{msg});
+                sendTo(addr, std::move(copy));
             }
         }
+    }
 
-        auto lastAddr = getTargetEoAddress(list.at(n - 1));
+    template <typename Msg>
+    void routeLast(Msg msg, const char *msgName)
+    {
+        const auto &list = msg.head.busTaskIds;
+        auto lastAddr = getTargetEoAddress(list.at(list.size() - 1));
         if (lastAddr)
         {
+            msg.head.busTaskIds = {list.at(list.size() - 1)};
             LG_DBG("routing %s to Business EO (delegate)", msgName);
             delegateTo(lastAddr, std::move(msg));
         }
         else
         {
-            LG_ERR("last GTID no route, dropping %s", msgName);
+            LG_ERR("last busTaskId no route, dropping %s", msgName);
         }
     }
 };

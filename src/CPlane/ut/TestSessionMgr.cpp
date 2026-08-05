@@ -50,9 +50,8 @@ class TestSessionMgr : public fw::EoTestBase
         checkOutput<TaskCreateResp>(accessGateway_,
                                     [&](TaskCreateResp &msg)
                                     {
-                                        ASSERT_EQ(msg.head.gtidList.size(), 1);
-                                        created = msg.head.gtidList.at(0);
-                                        EXPECT_TRUE(msg.success);
+                                        EXPECT_TRUE(msg.isSuccess);
+                                        created = msg.head.sessionTaskId;
                                     });
         return created;
     }
@@ -61,11 +60,11 @@ class TestSessionMgr : public fw::EoTestBase
     {
         auto del = TaskDeleteReq{};
         fillDefaultHead(del);
-        del.head.gtidList = {gtid};
+        del.head.sessionTaskId = gtid;
         sendToMe(std::move(del));
 
         checkOutput<TaskDeleteResp>(accessGateway_,
-                                    [&](TaskDeleteResp &msg) { EXPECT_TRUE(msg.success); });
+                                    [&](TaskDeleteResp &msg) { EXPECT_TRUE(msg.isSuccess); });
     }
 };
 
@@ -92,11 +91,11 @@ TEST_F(TestSessionMgr, CheckHandleTaskDeleteReq_InvalidGtid)
 
     auto del = TaskDeleteReq{};
     fillDefaultHead(del);
-    del.head.gtidList.clear();
+    del.head.sessionTaskId = common::kInvalidGtid;
     sendToMe(std::move(del));
 
     checkOutput<TaskDeleteResp>(accessGateway_,
-                                [&](TaskDeleteResp &msg) { EXPECT_FALSE(msg.success); });
+                                [&](TaskDeleteResp &msg) { EXPECT_FALSE(msg.isSuccess); });
 }
 
 TEST_F(TestSessionMgr, CheckHandleTaskDeleteReq_AfterDeleteAllocatesNext)

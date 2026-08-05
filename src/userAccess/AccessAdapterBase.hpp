@@ -1,11 +1,8 @@
 #pragma once
 
 #include "common/Constants.hpp"
-#include "common/UidUtil.hpp"
 #include "fw/EoTypes.hpp"
 #include "fw/ScopedEo.hpp"
-#include "generated/type/AccessType.hpp"
-#include "generated/type/AppType.hpp"
 #include "generated/Types.hpp"
 #include "utils/CrtpBase.hpp"
 
@@ -16,20 +13,13 @@
 namespace userAccess
 {
 
-template <typename Derived, common::AppType kApp, common::AccessType kAcc, typename Connection,
-          uint16_t kPollTimeoutMs = 10>
+template <typename Derived, typename Connection, uint16_t kPollTimeoutMs = 10>
 class AccessAdapterBase : public utils::CrtpBase<Derived>
 {
   public:
-    static constexpr common::AppType kAppType = kApp;
-    static constexpr common::AccessType kAccessType = kAcc;
     static constexpr auto kPollTimeout = std::chrono::milliseconds{kPollTimeoutMs};
 
-    explicit AccessAdapterBase(caf::actor_system &sys) : receiver_(sys)
-    {
-        userToConn_.fill(common::kInvalidConnectionId);
-        connToUser_.fill(common::kInvalidUserId);
-    }
+    explicit AccessAdapterBase(caf::actor_system &sys) : receiver_(sys) {}
 
     fw::EoAddress myAddress()
     {
@@ -55,14 +45,6 @@ class AccessAdapterBase : public utils::CrtpBase<Derived>
     {
         return receiver_;
     }
-    auto &connToUser()
-    {
-        return connToUser_;
-    }
-    auto &userToConn()
-    {
-        return userToConn_;
-    }
     auto &connections()
     {
         return connections_;
@@ -70,22 +52,6 @@ class AccessAdapterBase : public utils::CrtpBase<Derived>
     auto &gatewayAddr()
     {
         return gatewayAddr_;
-    }
-
-    template <typename Msg>
-    void fillHead(Msg &msg)
-    {
-        msg.head.accessType = kAccessType;
-        msg.head.appType = kAppType;
-        msg.head.uid = common::kInvalidUid;
-        msg.head.targets = 0;
-    }
-
-    template <typename Msg>
-    void setUidInHead(Msg &msg, common::ConnectionId connId)
-    {
-        auto uid = common::makeUid(connToUser().at(connId), kAppType);
-        msg.head.uid = uid;
     }
 
     template <typename Msg, typename F>
@@ -112,8 +78,6 @@ class AccessAdapterBase : public utils::CrtpBase<Derived>
 
   private:
     fw::ScopedEo receiver_;
-    std::array<common::UserId, common::kMaxClientsPerAccess> connToUser_{};
-    std::array<common::ConnectionId, common::kMaxUsers> userToConn_{};
     std::array<Connection, common::kMaxClientsPerAccess> connections_{};
     fw::EoAddress gatewayAddr_;
     fw::MessageHandler messageHandler_;

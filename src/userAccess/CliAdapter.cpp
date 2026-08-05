@@ -9,7 +9,7 @@
 namespace userAccess
 {
 
-bool CliAdapter::readFrontend()
+bool CliAdapter::readLine(std::string &line)
 {
     pollfd pfd{};
     pfd.fd = 0;
@@ -19,13 +19,18 @@ bool CliAdapter::readFrontend()
         return false;
     }
 
-    std::string line;
     if (not std::getline(std::cin, line))
     {
         return false;
     }
 
-    if (line.empty())
+    return not line.empty();
+}
+
+bool CliAdapter::readFrontend()
+{
+    std::string line;
+    if (not readLine(line))
     {
         return false;
     }
@@ -35,6 +40,12 @@ bool CliAdapter::readFrontend()
         return false;
     }
 
+    dispatchInput(line);
+    return true;
+}
+
+void CliAdapter::dispatchInput(const std::string &line)
+{
     if (state_ == State::EnteringKey)
     {
         sendApiKey(line);
@@ -52,8 +63,6 @@ bool CliAdapter::readFrontend()
         std::cout << "No active task. Use /new to create one.\n";
         showPrompt();
     }
-
-    return true;
 }
 
 void CliAdapter::showPrompt()
@@ -180,7 +189,7 @@ void CliAdapter::handleCommand(const std::string &line)
 void CliAdapter::sendTaskCreate()
 {
     common::message::TaskCreateReq req;
-    fillHead(req);
+    req.head.sessionTaskId = common::kInvalidGtid;
     req.taskType = common::TaskType::AiAgora;
     waiting_ = true;
     fw::anonSendTo(gatewayAddr(), std::move(req));
@@ -189,8 +198,7 @@ void CliAdapter::sendTaskCreate()
 void CliAdapter::sendTaskDelete()
 {
     common::message::TaskDeleteReq req;
-    fillHead(req);
-    req.head.gtidList = {currentGtid_};
+    req.head.sessionTaskId = currentGtid_;
     fw::anonSendTo(gatewayAddr(), std::move(req));
     resetState();
     std::cout << "Task deleted.\n";
@@ -200,8 +208,8 @@ void CliAdapter::sendTaskDelete()
 void CliAdapter::sendChatMessage(const std::string &content)
 {
     common::message::AiChatBusinessReq req;
-    fillHead(req);
-    req.head.gtidList = {currentGtid_};
+    req.head.sessionTaskId = currentGtid_;
+    req.head.busTaskIds = {currentGtid_};
     req.content = content;
     waiting_ = true;
     fw::anonSendTo(gatewayAddr(), std::move(req));
@@ -272,9 +280,9 @@ void CliAdapter::handle(const common::message::AiChatBusinessResp &resp)
 void CliAdapter::handle(const common::message::TaskCreateResp &resp)
 {
     waiting_ = false;
-    if (resp.success and not resp.head.gtidList.empty())
+    if (resp.isSuccess and resp.head.sessionTaskId != common::kInvalidGtid)
     {
-        currentGtid_ = resp.head.gtidList.at(0);
+        currentGtid_ = resp.head.sessionTaskId;
         state_ = State::EnteringKey;
         std::cout << "Task created: 0x" << std::hex << currentGtid_ << std::dec << "\n";
     }

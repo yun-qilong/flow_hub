@@ -45,7 +45,7 @@ void AiChatBus<T>::handle(const common::message::TempConfig &msg)
 template <common::TaskType T>
 void AiChatBus<T>::handle(const AiChatBusinessReq &req)
 {
-    auto gtid = req.head.gtidList.at(0);
+    auto gtid = req.head.busTaskIds.at(0);
     LG_FEAT(AICHAT, "received AiChatBusinessReq: gtid=0x%x contentSize=%zuB", gtid,
             req.content.size());
 
@@ -57,7 +57,7 @@ void AiChatBus<T>::handle(const AiChatBusinessReq &req)
 template <common::TaskType T>
 void AiChatBus<T>::handle(const AiChatServiceResp &resp)
 {
-    auto gtid = resp.head.gtidList.at(0);
+    auto gtid = resp.head.busTaskIds.at(0);
     LG_FEAT(AICHAT, "received AiChatServiceResp: gtid=0x%x contentSize=%zuB", gtid,
             resp.content.size());
 
@@ -177,9 +177,8 @@ AiChatServiceReq AiChatBus<T>::buildAiChatServiceReq(const UserHead &reqHead, ui
         strnlen(reinterpret_cast<const char *>(ctx.modelName.data()), ctx.modelName.size()));
 
     AiChatServiceReq req;
-    req.head.uid = reqHead.uid;
-    req.head.accessType = reqHead.accessType;
-    req.head.gtidList = {gtid};
+    req.head.sessionTaskId = reqHead.sessionTaskId;
+    req.head.busTaskIds = {gtid};
     req.messagesJson = std::move(messagesJson);
     req.modelName = modelName.empty() ? defaultModelName_ : modelName;
     req.temperature = ctx.temperature > 0.0 ? ctx.temperature : 0.7;

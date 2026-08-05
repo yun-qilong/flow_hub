@@ -1,5 +1,7 @@
 include message/UserHead.mt
+include message/TaskCreateCookie.mt
 
 message TaskCreateResp
     UserHead head
-    bool success
+    bool isSuccess
+    TaskCreateCookie cookie

@@ -41,12 +41,10 @@ class TestRouter : public fw::EoTestBase
     }
 
     template <typename M>
-    void fillHead(M &msg, std::vector<common::GTID> gtidList)
+    void fillHead(M &msg, std::vector<common::GTID> busTaskIds)
     {
-        msg.head.uid = kDefaultUid;
-        msg.head.accessType = kDefaultAccessType;
-        msg.head.appType = kDefaultAppType;
-        msg.head.gtidList = std::move(gtidList);
+        msg.head.sessionTaskId = kDefaultGtid;
+        msg.head.busTaskIds = std::move(busTaskIds);
     }
 
     Stub businessMgrStub_;
@@ -69,8 +67,8 @@ TEST_F(TestRouter, CheckHandleTempConfig_Tag6RegistersRoute)
     checkOutput<AiChatBusinessReq>(businessStubA_,
                                    [](AiChatBusinessReq &msg)
                                    {
-                                       EXPECT_EQ(msg.head.gtidList.size(), 1u);
-                                       EXPECT_EQ(msg.head.gtidList.at(0), kAiChatGtid);
+                                       ASSERT_EQ(msg.head.busTaskIds.size(), 1u);
+                                       EXPECT_EQ(msg.head.busTaskIds.at(0), kAiChatGtid);
                                    });
 }
 
@@ -91,7 +89,7 @@ TEST_F(TestRouter, CheckHandleRouterConfigReq_InstallAndReply)
     sendToMe(std::move(req));
 
     checkOutput<AiChatBusinessReq>(businessStubA_, [](AiChatBusinessReq &msg)
-                                   { EXPECT_EQ(msg.head.gtidList.size(), 1u); });
+                                   { EXPECT_EQ(msg.head.busTaskIds.size(), 1u); });
 }
 
 TEST_F(TestRouter, CheckHandleRouterReconfigReq_UpdateAndReply)
@@ -111,10 +109,10 @@ TEST_F(TestRouter, CheckHandleRouterReconfigReq_UpdateAndReply)
     sendToMe(std::move(req));
 
     checkOutput<AiChatBusinessReq>(businessStubA_, [](AiChatBusinessReq &msg)
-                                   { EXPECT_EQ(msg.head.gtidList.size(), 1u); });
+                                   { EXPECT_EQ(msg.head.busTaskIds.size(), 1u); });
 }
 
-TEST_F(TestRouter, CheckRouteAndForward_SingleGtid)
+TEST_F(TestRouter, CheckRouteAndForward_SingleBusTaskId)
 {
     EXPECT_LOG(LogLevel::INFO, 1);
 
@@ -131,10 +129,15 @@ TEST_F(TestRouter, CheckRouteAndForward_SingleGtid)
     sendToMe(std::move(req));
 
     checkOutput<AiChatBusinessReq>(businessStubA_,
-                                   [](AiChatBusinessReq &msg) { EXPECT_EQ(msg.content, "test"); });
+                                   [](AiChatBusinessReq &msg)
+                                   {
+                                       EXPECT_EQ(msg.content, "test");
+                                       ASSERT_EQ(msg.head.busTaskIds.size(), 1u);
+                                       EXPECT_EQ(msg.head.busTaskIds.at(0), kGtidIdx0);
+                                   });
 }
 
-TEST_F(TestRouter, CheckRouteAndForward_MultipleGtids)
+TEST_F(TestRouter, CheckRouteAndForward_MultipleBusTaskIds)
 {
     EXPECT_LOG(LogLevel::INFO, 1);
 
@@ -152,15 +155,30 @@ TEST_F(TestRouter, CheckRouteAndForward_MultipleGtids)
     req.content = "fanout";
     sendToMe(std::move(req));
 
-    checkOutput<AiChatBusinessReq>(businessStubA_, [](AiChatBusinessReq &msg)
-                                   { EXPECT_EQ(msg.content, "fanout"); });
-    checkOutput<AiChatBusinessReq>(businessStubB_, [](AiChatBusinessReq &msg)
-                                   { EXPECT_EQ(msg.content, "fanout"); });
-    checkOutput<AiChatBusinessReq>(businessStubC_, [](AiChatBusinessReq &msg)
-                                   { EXPECT_EQ(msg.content, "fanout"); });
+    checkOutput<AiChatBusinessReq>(businessStubA_,
+                                   [](AiChatBusinessReq &msg)
+                                   {
+                                       EXPECT_EQ(msg.content, "fanout");
+                                       ASSERT_EQ(msg.head.busTaskIds.size(), 1u);
+                                       EXPECT_EQ(msg.head.busTaskIds.at(0), kGtidIdx0);
+                                   });
+    checkOutput<AiChatBusinessReq>(businessStubB_,
+                                   [](AiChatBusinessReq &msg)
+                                   {
+                                       EXPECT_EQ(msg.content, "fanout");
+                                       ASSERT_EQ(msg.head.busTaskIds.size(), 1u);
+                                       EXPECT_EQ(msg.head.busTaskIds.at(0), kGtidIdx1);
+                                   });
+    checkOutput<AiChatBusinessReq>(businessStubC_,
+                                   [](AiChatBusinessReq &msg)
+                                   {
+                                       EXPECT_EQ(msg.content, "fanout");
+                                       ASSERT_EQ(msg.head.busTaskIds.size(), 1u);
+                                       EXPECT_EQ(msg.head.busTaskIds.at(0), kGtidIdx2);
+                                   });
 }
 
-TEST_F(TestRouter, CheckRouteAndForward_EmptyGtidList)
+TEST_F(TestRouter, CheckRouteAndForward_EmptyBusTaskIds)
 {
     EXPECT_LOG(LogLevel::DBG, 1);
     EXPECT_LOG(LogLevel::ERR, 1);
@@ -171,7 +189,7 @@ TEST_F(TestRouter, CheckRouteAndForward_EmptyGtidList)
     sendToMe(std::move(resp));
 }
 
-TEST_F(TestRouter, CheckRouteAndForward_LastGtidNoRoute)
+TEST_F(TestRouter, CheckRouteAndForward_LastBusTaskIdNoRoute)
 {
     EXPECT_LOG(LogLevel::INFO, 1);
 
@@ -212,7 +230,8 @@ TEST_F(TestRouter, CheckHandleAiChatServiceResp_Routes)
                                    [](AiChatServiceResp &msg)
                                    {
                                        EXPECT_TRUE(msg.success);
-                                       EXPECT_EQ(msg.head.gtidList.size(), 1u);
+                                       ASSERT_EQ(msg.head.busTaskIds.size(), 1u);
+                                       EXPECT_EQ(msg.head.busTaskIds.at(0), kGtidIdx0);
                                    });
 }
 

@@ -34,9 +34,8 @@ class TestAiApiAdapter : public fw::EoTestBase
     template <typename M>
     void fillHead(M &msg)
     {
-        msg.head.uid = kDefaultUid;
-        msg.head.accessType = kDefaultAccessType;
-        msg.head.appType = kDefaultAppType;
+        msg.head.sessionTaskId = kDefaultGtid;
+        msg.head.busTaskIds = {kDefaultGtid};
     }
 
     Stub routerStub_;

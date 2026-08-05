@@ -3,77 +3,70 @@
 namespace userAccess
 {
 
+using TaskCreateReq = common::message::TaskCreateReq;
+using TaskCreateResp = common::message::TaskCreateResp;
+using TaskDeleteReq = common::message::TaskDeleteReq;
+using TaskDeleteResp = common::message::TaskDeleteResp;
+using AiChatBusinessReq = common::message::AiChatBusinessReq;
+using AiChatBusinessResp = common::message::AiChatBusinessResp;
+using TempConfig = common::message::TempConfig;
+
 AccessGateway::AccessGateway(fw::EoConfig &cfg, const fw::EoAddress &cliAdapter)
-    : fw::EoBase<AccessGateway>(cfg)
+    : fw::EoBase<AccessGateway>(cfg), cliAdapterAddr_(cliAdapter)
 {
-    adapterTable_.at(static_cast<size_t>(common::AccessType::AiAgoraCLI)) = cliAdapter;
-    sendTo(cliAdapter, common::message::TempConfig{0});
+    sendTo(cliAdapter, TempConfig{0});
 }
 
-template <typename Msg>
-void AccessGateway::routeToAdapters(Msg &msg)
+void AccessGateway::handle(const TaskCreateReq &req)
 {
-    auto targets = msg.head.targets;
-    if (targets == 0)
+    auto copy = TaskCreateReq{req};
+    copy.cookie.adapterAddr = cliAdapterAddr_;
+    delegateTo(sessionMgrAddr_, std::move(copy));
+}
+
+void AccessGateway::handle(TaskCreateResp resp)
+{
+    if (resp.isSuccess)
     {
-        forwardToAdapter(msg);
+        auto idx = static_cast<size_t>(resp.head.sessionTaskId & 0x0FFF);
+        gtidToAdapter_.at(idx) = resp.cookie.adapterAddr;
     }
-    else
-    {
-        fanOutToAdapters(msg, targets);
-    }
+    delegateTo(cliAdapterAddr_, std::move(resp));
 }
 
-template <typename Msg>
-void AccessGateway::fanOutToAdapters(const Msg &msg, uint64_t targets)
+void AccessGateway::handle(const TaskDeleteReq &req)
 {
-    while (targets != 0)
-    {
-        auto i = static_cast<size_t>(__builtin_ctzll(targets));
-        targets &= targets - 1;
-        if (adapterTable_.at(i))
-        {
-            sendTo(adapterTable_.at(i), Msg{msg});
-        }
-    }
+    delegateTo(sessionMgrAddr_, TaskDeleteReq{req});
 }
 
-template <typename Msg>
-void AccessGateway::forwardToAdapter(Msg &msg)
+void AccessGateway::handle(TaskDeleteResp resp)
 {
-    auto accType = static_cast<size_t>(msg.head.accessType);
-    if (adapterTable_.at(accType))
-    {
-        delegateTo(adapterTable_.at(accType), std::move(msg));
-    }
+    auto idx = static_cast<size_t>(resp.head.sessionTaskId & 0x0FFF);
+    gtidToAdapter_.at(idx) = fw::EoAddress{};
+    delegateTo(cliAdapterAddr_, std::move(resp));
 }
 
-void AccessGateway::handle(const common::message::TaskCreateReq &req)
-{
-    delegateTo(sessionMgrAddr_, common::message::TaskCreateReq{req});
-}
-
-void AccessGateway::handle(common::message::TaskCreateResp resp)
-{
-    routeToAdapters(resp);
-}
-
-void AccessGateway::handle(const common::message::TaskDeleteReq &req)
-{
-    delegateTo(sessionMgrAddr_, common::message::TaskDeleteReq{req});
-}
-
-void AccessGateway::handle(common::message::TaskDeleteResp resp)
-{
-    routeToAdapters(resp);
-}
-
-void AccessGateway::handle(common::message::AiChatBusinessReq req)
+void AccessGateway::handle(AiChatBusinessReq req)
 {
     delegateTo(sessionDataAddr_, std::move(req));
 }
 
-void AccessGateway::handle(const common::message::TempConfig &msg)
+void AccessGateway::handle(AiChatBusinessResp resp)
+{
+    auto idx = static_cast<size_t>(resp.head.sessionTaskId & 0x0FFF);
+    auto adapter = gtidToAdapter_.at(idx);
+    if (adapter)
+    {
+        delegateTo(adapter, std::move(resp));
+    }
+    else
+    {
+        LG_ERR("no adapter mapped for sessionTaskId=0x%x, dropping AiChatBusinessResp",
+               resp.head.sessionTaskId);
+    }
+}
+
+void AccessGateway::handle(const TempConfig &msg)
 {
     if (msg.tag == 1)
     {
@@ -83,11 +76,6 @@ void AccessGateway::handle(const common::message::TempConfig &msg)
     {
         sessionDataAddr_ = senderAddress();
     }
-}
-
-void AccessGateway::handle(common::message::AiChatBusinessResp resp)
-{
-    routeToAdapters(resp);
 }
 
 } // namespace userAccess

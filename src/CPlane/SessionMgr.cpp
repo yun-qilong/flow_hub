@@ -27,6 +27,7 @@ void SessionMgr::handle(const TaskCreateReq &req)
 
     TaskCreateResp resp;
     resp.head = req.head;
+    resp.cookie = req.cookie;
     processCreateTask(req.taskType, resp);
 }
 
@@ -35,22 +36,22 @@ void SessionMgr::processCreateTask(common::TaskType taskType, TaskCreateResp &re
     pool_.allocate(taskType).useOrFailed(
         [&](common::GTID &gtid)
         {
-            resp.head.gtidList = {gtid};
-            resp.success = true;
+            resp.head.sessionTaskId = gtid;
+            resp.isSuccess = true;
             LG_INFO("[SessionMgr] TaskCreate success: gtid=0x%x", gtid);
             sendTo(accessGatewayAddr_, std::move(resp));
         },
         [&]()
         {
             LG_ERR("[SessionMgr] TaskCreate failed: no available GTID");
-            resp.success = false;
+            resp.isSuccess = false;
             sendTo(accessGatewayAddr_, std::move(resp));
         });
 }
 
 void SessionMgr::handle(const TaskDeleteReq &req)
 {
-    auto gtid = req.head.gtidList.empty() ? common::kInvalidGtid : req.head.gtidList.at(0);
+    auto gtid = req.head.sessionTaskId;
     LG_INFO("[SessionMgr] TaskDeleteReq: gtid=0x%x", gtid);
 
     TaskDeleteResp resp;
@@ -63,13 +64,13 @@ void SessionMgr::processDeleteTask(common::GTID gtid, TaskDeleteResp &resp)
     if (gtid == common::kInvalidGtid)
     {
         LG_ERR("[SessionMgr] TaskDelete failed: invalid gtid");
-        resp.success = false;
+        resp.isSuccess = false;
         sendTo(accessGatewayAddr_, std::move(resp));
         return;
     }
 
     pool_.deallocate(gtid);
-    resp.success = true;
+    resp.isSuccess = true;
     LG_INFO("[SessionMgr] TaskDelete success: gtid=0x%x", gtid);
     sendTo(accessGatewayAddr_, std::move(resp));
 }

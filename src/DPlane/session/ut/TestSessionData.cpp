@@ -79,8 +79,7 @@ TEST_F(TestSessionData, CheckHandleAiChatBusinessResp_ForwardToAccessGateway)
     checkOutput<AiChatBusinessResp>(accessGateway_,
                                     [&](AiChatBusinessResp &msg)
                                     {
-                                        ASSERT_EQ(msg.head.gtidList.size(), 1);
-                                        EXPECT_EQ(msg.head.gtidList.at(0), kDefaultGtid);
+                                        EXPECT_EQ(msg.head.sessionTaskId, kDefaultGtid);
                                         EXPECT_EQ(msg.content, "response");
                                     });
 }

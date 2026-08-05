@@ -91,18 +91,13 @@ class EoTestBase : public ::testing::Test
 
     // ---- Head field defaults (shared across all EO tests) ----
 
-    static constexpr uint16_t kDefaultUid = 0x100;
     static constexpr uint16_t kDefaultGtid = 0xAAAA;
-    static constexpr common::AccessType kDefaultAccessType = static_cast<common::AccessType>(7);
-    static constexpr common::AppType kDefaultAppType = static_cast<common::AppType>(5);
 
     template <typename M>
     void fillDefaultHead(M &msg)
     {
-        msg.head.uid = kDefaultUid;
-        msg.head.accessType = kDefaultAccessType;
-        msg.head.appType = kDefaultAppType;
-        msg.head.gtidList.push_back(kDefaultGtid);
+        msg.head.sessionTaskId = kDefaultGtid;
+        msg.head.busTaskIds.push_back(kDefaultGtid);
     }
 
     // ---- Stub / Actor factories ----

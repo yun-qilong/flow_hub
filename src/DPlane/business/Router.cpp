@@ -51,8 +51,8 @@ void Router::handle(const RouterReconfigReq &req)
 
 void Router::handle(AiChatBusinessReq req)
 {
-    auto gtid = req.head.gtidList.at(0);
-    LG_DBG("received AiChatBusinessReq: gtid=0x%x contentSize=%zuB", gtid, req.content.size());
+    LG_DBG("received AiChatBusinessReq: gtid=0x%x contentSize=%zuB", req.head.sessionTaskId,
+           req.content.size());
     routeAndForward(std::move(req), "AiChatBusinessReq");
 }
 

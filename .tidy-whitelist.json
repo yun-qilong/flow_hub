@@ -1,11 +1,4 @@
 {
-  "src/main.cpp": {
-    "readability-function-size": 1
-  },
-  "src/userAccess/CliAdapter.cpp": {
-    "readability-function-size": 1,
-    "readability-function-cognitive-complexity": 1
-  },
   "src/utils/JsonCoDec.cpp": {
     "cppcoreguidelines-avoid-c-arrays,modernize-avoid-c-arrays": 1,
     "cppcoreguidelines-pro-bounds-pointer-arithmetic": 8,

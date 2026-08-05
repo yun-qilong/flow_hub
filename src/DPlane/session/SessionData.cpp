@@ -24,8 +24,8 @@ void SessionData::handle(const common::message::TempConfig &msg)
 
 void SessionData::handle(AiChatBusinessReq req)
 {
-    auto gtid = req.head.gtidList.empty() ? common::kInvalidGtid : req.head.gtidList.at(0);
-    LG_DBG("received AiChatBusinessReq: gtid=0x%x contentSize=%zuB", gtid, req.content.size());
+    LG_DBG("received AiChatBusinessReq: sessionTaskId=0x%x contentSize=%zuB",
+           req.head.sessionTaskId, req.content.size());
 
     if (not routerAddr_)
     {
@@ -38,8 +38,8 @@ void SessionData::handle(AiChatBusinessReq req)
 
 void SessionData::handle(AiChatBusinessResp resp)
 {
-    auto gtid = resp.head.gtidList.empty() ? common::kInvalidGtid : resp.head.gtidList.at(0);
-    LG_DBG("received AiChatBusinessResp: gtid=0x%x contentSize=%zuB", gtid, resp.content.size());
+    LG_DBG("received AiChatBusinessResp: sessionTaskId=0x%x contentSize=%zuB",
+           resp.head.sessionTaskId, resp.content.size());
 
     if (not accessGatewayAddr_)
     {

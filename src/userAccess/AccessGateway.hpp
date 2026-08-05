@@ -37,18 +37,12 @@ class AccessGateway : public fw::EoBase<AccessGateway>
     }
 
   private:
-    template <typename Msg>
-    void routeToAdapters(Msg &msg);
-
-    template <typename Msg>
-    void fanOutToAdapters(const Msg &msg, uint64_t targets);
-
-    template <typename Msg>
-    void forwardToAdapter(Msg &msg);
+    static constexpr size_t kGtidToAdapterSize = 4096;
 
     fw::EoAddress sessionMgrAddr_;
     fw::EoAddress sessionDataAddr_;
-    std::array<fw::EoAddress, common::kMaxAccessTypes> adapterTable_;
+    fw::EoAddress cliAdapterAddr_;
+    std::array<fw::EoAddress, kGtidToAdapterSize> gtidToAdapter_{};
 };
 
 } // namespace userAccess

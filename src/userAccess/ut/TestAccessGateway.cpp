@@ -7,8 +7,7 @@ namespace
 {
 
 using namespace common::message;
-
-// ===== base fixture =====
+using utils::LogLevel;
 
 class TestAccessGateway : public fw::EoTestBase
 {
@@ -30,12 +29,29 @@ class TestAccessGateway : public fw::EoTestBase
         sendToMeFrom(sessionData_, testee_, TempConfig{2});
     }
 
+    void sendBusinessResp(common::GTID sessionTaskId)
+    {
+        auto resp = AiChatBusinessResp{};
+        fillDefaultHead(resp);
+        resp.head.sessionTaskId = sessionTaskId;
+        resp.content = "reply";
+        sendToMe(std::move(resp));
+    }
+
+    void writeMapping(common::GTID sessionTaskId)
+    {
+        auto resp = TaskCreateResp{};
+        fillDefaultHead(resp);
+        resp.head.sessionTaskId = sessionTaskId;
+        resp.isSuccess = true;
+        resp.cookie.adapterAddr = stubAddress(cliAdapter_);
+        sendToMe(std::move(resp));
+        checkOutput<TaskCreateResp>(cliAdapter_, [](TaskCreateResp &) {});
+    }
+
     Stub cliAdapter_;
     Stub sessionMgr_;
     Stub sessionData_;
-
-    static constexpr common::AccessType kCliAccessType = static_cast<common::AccessType>(0);
-    static constexpr common::AccessType kEmptyAccessType = static_cast<common::AccessType>(1);
 };
 
 // ===== TempConfig =====
@@ -63,54 +79,90 @@ TEST_F(TestAccessGateway, CheckHandleTempConfig_UnknownTagNoOp)
     checkOutput<TaskCreateReq>(sessionMgr_, [](TaskCreateReq &) {});
 }
 
-// ===== AiChatBusinessReq → sessionData =====
+// ===== TaskCreate 下行 =====
 
-TEST_F(TestAccessGateway, CheckHandleAiChatBusinessReq_DelegateToSessionData)
+TEST_F(TestAccessGateway, CheckHandleTaskCreateReq_FillsCookieAndForwards)
+{
+    auto req = TaskCreateReq{};
+    fillDefaultHead(req);
+    sendToMe(std::move(req));
+
+    checkOutput<TaskCreateReq>(sessionMgr_, [&](TaskCreateReq &msg)
+                               { EXPECT_EQ(msg.cookie.adapterAddr, stubAddress(cliAdapter_)); });
+}
+
+TEST_F(TestAccessGateway, CheckHandleTaskDeleteReq_ForwardsToSessionMgr)
+{
+    auto req = TaskDeleteReq{};
+    fillDefaultHead(req);
+    sendToMe(std::move(req));
+    checkOutput<TaskDeleteReq>(sessionMgr_, [](TaskDeleteReq &) {});
+}
+
+TEST_F(TestAccessGateway, CheckHandleAiChatBusinessReq_ForwardsToSessionData)
 {
     auto req = AiChatBusinessReq{};
     req.content = "hello";
     sendToMe(std::move(req));
-
     checkOutput<AiChatBusinessReq>(sessionData_,
                                    [](AiChatBusinessReq &msg) { EXPECT_EQ(msg.content, "hello"); });
 }
 
-// ===== TYPED_TEST: Req → sessionMgr =====
+// ===== 映射表：写入 + 回投 =====
 
-template <typename ReqMsg>
-class TestAccessGateway_ReqToSessionMgr : public TestAccessGateway
+TEST_F(TestAccessGateway, CheckHandleTaskCreateResp_SuccessWritesMappingAndRoutes)
 {
-};
+    constexpr common::GTID kGtid = 0x7001;
 
-using ReqMsgTypes = testing::Types<TaskCreateReq, TaskDeleteReq>;
+    writeMapping(kGtid);
 
-TYPED_TEST_SUITE(TestAccessGateway_ReqToSessionMgr, ReqMsgTypes);
-
-TYPED_TEST(TestAccessGateway_ReqToSessionMgr, DelegatesToSessionMgr)
-{
-    TypeParam req{};
-    this->sendToMe(std::move(req));
-    this->template checkOutput<TypeParam>(this->sessionMgr_, [](TypeParam &) {});
+    sendBusinessResp(kGtid);
+    checkOutput<AiChatBusinessResp>(cliAdapter_, [](AiChatBusinessResp &msg)
+                                    { EXPECT_EQ(msg.content, "reply"); });
 }
 
-// ===== TYPED_TEST: Resp → forwardToAdapter =====
-
-template <typename Msg>
-class TestAccessGateway_RespForwardToAdapter : public TestAccessGateway
+TEST_F(TestAccessGateway, CheckHandleTaskCreateResp_FailureNoMapping)
 {
-};
+    constexpr common::GTID kGtid = 0x7002;
 
-using RespMsgTypes = testing::Types<TaskCreateResp, TaskDeleteResp, AiChatBusinessResp>;
+    auto resp = TaskCreateResp{};
+    fillDefaultHead(resp);
+    resp.head.sessionTaskId = kGtid;
+    resp.isSuccess = false;
+    resp.cookie.adapterAddr = stubAddress(cliAdapter_);
+    sendToMe(std::move(resp));
+    checkOutput<TaskCreateResp>(cliAdapter_, [](TaskCreateResp &) {});
 
-TYPED_TEST_SUITE(TestAccessGateway_RespForwardToAdapter, RespMsgTypes);
+    EXPECT_LOG(LogLevel::ERR, 1);
 
-TYPED_TEST(TestAccessGateway_RespForwardToAdapter, ForwardsToAdapter)
+    sendBusinessResp(kGtid);
+}
+
+TEST_F(TestAccessGateway, CheckHandleAiChatBusinessResp_NoMappingDrops)
 {
-    TypeParam msg{};
-    msg.head.accessType = this->kCliAccessType;
-    msg.head.targets = 0;
-    this->sendToMe(std::move(msg));
-    this->template checkOutput<TypeParam>(this->cliAdapter_, [](TypeParam &) {});
+    EXPECT_LOG(LogLevel::ERR, 1);
+
+    sendBusinessResp(0x7777);
+}
+
+// ===== 映射表：清除 =====
+
+TEST_F(TestAccessGateway, CheckHandleTaskDeleteResp_ClearsMapping)
+{
+    constexpr common::GTID kGtid = 0x7003;
+
+    writeMapping(kGtid);
+
+    auto del = TaskDeleteResp{};
+    fillDefaultHead(del);
+    del.head.sessionTaskId = kGtid;
+    del.isSuccess = true;
+    sendToMe(std::move(del));
+    checkOutput<TaskDeleteResp>(cliAdapter_, [](TaskDeleteResp &) {});
+
+    EXPECT_LOG(LogLevel::ERR, 1);
+
+    sendBusinessResp(kGtid);
 }
 
 } // namespace

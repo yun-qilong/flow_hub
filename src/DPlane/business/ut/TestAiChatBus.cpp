@@ -50,10 +50,8 @@ class TestAiChatBus : public fw::EoTestBase
     template <typename M>
     void fillHead(M &msg, common::GTID gtid)
     {
-        msg.head.uid = kDefaultUid;
-        msg.head.accessType = kDefaultAccessType;
-        msg.head.appType = kDefaultAppType;
-        msg.head.gtidList = {gtid};
+        msg.head.sessionTaskId = gtid;
+        msg.head.busTaskIds = {gtid};
     }
 
     void registerServiceGateway()

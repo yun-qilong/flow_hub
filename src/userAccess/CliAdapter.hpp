@@ -1,8 +1,6 @@
 #pragma once
 
 #include "generated/message/Messages.hpp"
-#include "generated/type/AccessType.hpp"
-#include "generated/type/AppType.hpp"
 #include "userAccess/AccessAdapterBase.hpp"
 
 #include <string>
@@ -14,8 +12,7 @@ struct NoConnection
 {
 };
 
-class CliAdapter : public AccessAdapterBase<CliAdapter, common::AppType::AiAgora,
-                                            common::AccessType::AiAgoraCLI, NoConnection>
+class CliAdapter : public AccessAdapterBase<CliAdapter, NoConnection>
 {
     using Base = AccessAdapterBase;
 
@@ -38,6 +35,8 @@ class CliAdapter : public AccessAdapterBase<CliAdapter, common::AppType::AiAgora
 
     // must be public — called by AccessAdapterBase::run() via CRTP
     bool readFrontend();
+    static bool readLine(std::string &line);
+    void dispatchInput(const std::string &line);
 
     void setAiApiAdapterAddr(fw::EoAddress addr)
     {
