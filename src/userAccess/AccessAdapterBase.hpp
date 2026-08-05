@@ -53,6 +53,10 @@ class AccessAdapterBase : public utils::CrtpBase<Derived>
     {
         return gatewayAddr_;
     }
+    auto &messageHandler()
+    {
+        return messageHandler_;
+    }
 
     template <typename Msg, typename F>
     void on(F &&handler)

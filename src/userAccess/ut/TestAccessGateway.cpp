@@ -49,6 +49,17 @@ class TestAccessGateway : public fw::EoTestBase
         checkOutput<TaskCreateResp>(cliAdapter_, [](TaskCreateResp &) {});
     }
 
+    void writeMappingTo(common::GTID sessionTaskId, Stub &adapter)
+    {
+        auto resp = TaskCreateResp{};
+        fillDefaultHead(resp);
+        resp.head.sessionTaskId = sessionTaskId;
+        resp.isSuccess = true;
+        resp.cookie.adapterAddr = stubAddress(adapter);
+        sendToMe(std::move(resp));
+        checkOutput<TaskCreateResp>(cliAdapter_, [](TaskCreateResp &) {});
+    }
+
     Stub cliAdapter_;
     Stub sessionMgr_;
     Stub sessionDispatcher_;
@@ -155,6 +166,66 @@ TEST_F(TestAccessGateway, CheckHandleTaskDeleteResp_ClearsMapping)
     EXPECT_LOG(LogLevel::ERR, 1);
 
     sendBusinessResp(kGtid);
+}
+
+TEST_F(TestAccessGateway, CheckMapping_SameGtidOverwritesToNewAdapter)
+{
+    auto adapterB = makeStub();
+
+    writeMapping(0x7123);
+    writeMappingTo(0x7123, adapterB);
+
+    sendBusinessResp(0x7123);
+    checkOutput<AiChatBusinessResp>(adapterB, [](AiChatBusinessResp &) {});
+}
+
+TEST_F(TestAccessGateway, CheckMapping_IndexBoundaryLow)
+{
+    writeMapping(0x0000);
+
+    sendBusinessResp(0x0000);
+    checkOutput<AiChatBusinessResp>(cliAdapter_, [](AiChatBusinessResp &) {});
+}
+
+TEST_F(TestAccessGateway, CheckMapping_IndexBoundaryHigh)
+{
+    writeMapping(0x0FFF);
+
+    sendBusinessResp(0x0FFF);
+    checkOutput<AiChatBusinessResp>(cliAdapter_, [](AiChatBusinessResp &) {});
+}
+
+TEST_F(TestAccessGateway, CheckMapping_HighBitsMaskedToSameSlot)
+{
+    writeMapping(0x1000);
+
+    auto del = TaskDeleteResp{};
+    fillDefaultHead(del);
+    del.head.sessionTaskId = 0x0000;
+    del.isSuccess = true;
+    sendToMe(std::move(del));
+    checkOutput<TaskDeleteResp>(cliAdapter_, [](TaskDeleteResp &) {});
+
+    EXPECT_LOG(LogLevel::ERR, 1);
+
+    sendBusinessResp(0x1000);
+}
+
+TEST_F(TestAccessGateway, CheckMapping_DeleteUnmappedIdempotent)
+{
+    auto del = TaskDeleteResp{};
+    fillDefaultHead(del);
+    del.head.sessionTaskId = 0x7777;
+    del.isSuccess = true;
+    sendToMe(std::move(del));
+    checkOutput<TaskDeleteResp>(cliAdapter_, [](TaskDeleteResp &) {});
+
+    auto delAgain = TaskDeleteResp{};
+    fillDefaultHead(delAgain);
+    delAgain.head.sessionTaskId = 0x7777;
+    delAgain.isSuccess = true;
+    sendToMe(std::move(delAgain));
+    checkOutput<TaskDeleteResp>(cliAdapter_, [](TaskDeleteResp &) {});
 }
 
 } // namespace

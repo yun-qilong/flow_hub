@@ -84,4 +84,18 @@ TEST_F(TestSessionDispatcher, CheckHandleAiChatBusinessResp_DelegateToAccessGate
                                     });
 }
 
+TEST_F(TestSessionDispatcher, CheckHandleAiChatBusinessResp_GatewayNotSet)
+{
+    stopActor(testee_);
+    testee_ = spawn<DPlane::session::SessionDispatcher>(fw::EoAddress{});
+
+    EXPECT_LOG(LogLevel::DBG, 1);
+    EXPECT_LOG(LogLevel::ERR, 1);
+
+    auto resp = AiChatBusinessResp{};
+    fillDefaultHead(resp);
+    resp.content = "should_drop";
+    sendToMe(std::move(resp));
+}
+
 } // namespace
