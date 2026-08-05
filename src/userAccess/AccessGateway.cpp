@@ -48,7 +48,7 @@ void AccessGateway::handle(TaskDeleteResp resp)
 
 void AccessGateway::handle(AiChatBusinessReq req)
 {
-    delegateTo(sessionDataAddr_, std::move(req));
+    delegateTo(sessionDispatcherAddr_, std::move(req));
 }
 
 void AccessGateway::handle(AiChatBusinessResp resp)
@@ -74,7 +74,7 @@ void AccessGateway::handle(const TempConfig &msg)
     }
     else if (msg.tag == 2)
     {
-        sessionDataAddr_ = senderAddress();
+        sessionDispatcherAddr_ = senderAddress();
     }
 }
 

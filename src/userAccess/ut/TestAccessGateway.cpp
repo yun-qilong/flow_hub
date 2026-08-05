@@ -16,17 +16,17 @@ class TestAccessGateway : public fw::EoTestBase
     {
         cliAdapter_ = makeStub();
         sessionMgr_ = makeStub();
-        sessionData_ = makeStub();
+        sessionDispatcher_ = makeStub();
         trackStub(cliAdapter_);
         trackStub(sessionMgr_);
-        trackStub(sessionData_);
+        trackStub(sessionDispatcher_);
 
         testee_ = spawn<userAccess::AccessGateway>(stubAddress(cliAdapter_));
 
         checkOutput<TempConfig>(cliAdapter_, [](TempConfig &msg) { EXPECT_EQ(msg.tag, 0); });
 
         sendToMeFrom(sessionMgr_, testee_, TempConfig{1});
-        sendToMeFrom(sessionData_, testee_, TempConfig{2});
+        sendToMeFrom(sessionDispatcher_, testee_, TempConfig{2});
     }
 
     void sendBusinessResp(common::GTID sessionTaskId)
@@ -51,10 +51,8 @@ class TestAccessGateway : public fw::EoTestBase
 
     Stub cliAdapter_;
     Stub sessionMgr_;
-    Stub sessionData_;
+    Stub sessionDispatcher_;
 };
-
-// ===== TempConfig =====
 
 TEST_F(TestAccessGateway, CheckHandleTempConfig_Tag1SetsSessionMgr)
 {
@@ -63,11 +61,11 @@ TEST_F(TestAccessGateway, CheckHandleTempConfig_Tag1SetsSessionMgr)
     checkOutput<TaskCreateReq>(sessionMgr_, [](TaskCreateReq &) {});
 }
 
-TEST_F(TestAccessGateway, CheckHandleTempConfig_Tag2SetsSessionData)
+TEST_F(TestAccessGateway, CheckHandleTempConfig_Tag2SetsSessionDispatcher)
 {
     auto req = AiChatBusinessReq{};
     sendToMe(std::move(req));
-    checkOutput<AiChatBusinessReq>(sessionData_, [](AiChatBusinessReq &) {});
+    checkOutput<AiChatBusinessReq>(sessionDispatcher_, [](AiChatBusinessReq &) {});
 }
 
 TEST_F(TestAccessGateway, CheckHandleTempConfig_UnknownTagNoOp)
@@ -78,8 +76,6 @@ TEST_F(TestAccessGateway, CheckHandleTempConfig_UnknownTagNoOp)
     sendToMe(std::move(req));
     checkOutput<TaskCreateReq>(sessionMgr_, [](TaskCreateReq &) {});
 }
-
-// ===== TaskCreate 下行 =====
 
 TEST_F(TestAccessGateway, CheckHandleTaskCreateReq_FillsCookieAndForwards)
 {
@@ -99,16 +95,14 @@ TEST_F(TestAccessGateway, CheckHandleTaskDeleteReq_ForwardsToSessionMgr)
     checkOutput<TaskDeleteReq>(sessionMgr_, [](TaskDeleteReq &) {});
 }
 
-TEST_F(TestAccessGateway, CheckHandleAiChatBusinessReq_ForwardsToSessionData)
+TEST_F(TestAccessGateway, CheckHandleAiChatBusinessReq_ForwardsToSessionDispatcher)
 {
     auto req = AiChatBusinessReq{};
     req.content = "hello";
     sendToMe(std::move(req));
-    checkOutput<AiChatBusinessReq>(sessionData_,
+    checkOutput<AiChatBusinessReq>(sessionDispatcher_,
                                    [](AiChatBusinessReq &msg) { EXPECT_EQ(msg.content, "hello"); });
 }
-
-// ===== 映射表：写入 + 回投 =====
 
 TEST_F(TestAccessGateway, CheckHandleTaskCreateResp_SuccessWritesMappingAndRoutes)
 {
@@ -144,8 +138,6 @@ TEST_F(TestAccessGateway, CheckHandleAiChatBusinessResp_NoMappingDrops)
 
     sendBusinessResp(0x7777);
 }
-
-// ===== 映射表：清除 =====
 
 TEST_F(TestAccessGateway, CheckHandleTaskDeleteResp_ClearsMapping)
 {

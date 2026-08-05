@@ -20,12 +20,12 @@ class TestAiChatBus : public fw::EoTestBase
   protected:
     void SetUp() override
     {
-        sessionDataStub_ = makeStub();
+        sessionDispatcherStub_ = makeStub();
         businessMgrStub_ = makeStub();
         routerStub_ = makeStub();
         serviceGatewayStub_ = makeStub();
 
-        trackStub(sessionDataStub_);
+        trackStub(sessionDispatcherStub_);
         trackStub(businessMgrStub_);
         trackStub(routerStub_);
         trackStub(serviceGatewayStub_);
@@ -34,7 +34,7 @@ class TestAiChatBus : public fw::EoTestBase
             .useOrFailed([&](common::GTID g) { gtid_ = g; },
                          [] { FAIL() << "failed to allocate GTID"; });
 
-        testee_ = spawn<AiChatBus>(pool_, stubAddress(sessionDataStub_),
+        testee_ = spawn<AiChatBus>(pool_, stubAddress(sessionDispatcherStub_),
                                    stubAddress(businessMgrStub_), stubAddress(routerStub_));
 
         checkOutput<TempConfig>(routerStub_, [](TempConfig &msg) { EXPECT_EQ(msg.tag, 6); });
@@ -62,7 +62,7 @@ class TestAiChatBus : public fw::EoTestBase
     common::TaskPool pool_;
     common::GTID gtid_ = 0;
 
-    Stub sessionDataStub_;
+    Stub sessionDispatcherStub_;
     Stub businessMgrStub_;
     Stub routerStub_;
     Stub serviceGatewayStub_;
@@ -131,7 +131,7 @@ TEST_F(TestAiChatBus, CheckHandleAiChatServiceResp_NormalResp)
     resp.reqSeq = 1;
     sendToMe(std::move(resp));
 
-    checkOutput<AiChatBusinessResp>(sessionDataStub_,
+    checkOutput<AiChatBusinessResp>(sessionDispatcherStub_,
                                     [](AiChatBusinessResp &msg)
                                     {
                                         EXPECT_TRUE(msg.success);
@@ -186,7 +186,7 @@ TEST_F(TestAiChatBus, CheckHandleAiChatServiceResp_Failure)
     resp.reqSeq = 1;
     sendToMe(std::move(resp));
 
-    checkOutput<AiChatBusinessResp>(sessionDataStub_,
+    checkOutput<AiChatBusinessResp>(sessionDispatcherStub_,
                                     [](AiChatBusinessResp &msg)
                                     {
                                         EXPECT_FALSE(msg.success);

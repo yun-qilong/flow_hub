@@ -1,8 +1,3 @@
-// src/DPlane/session/SessionData.hpp
-// Data-plane session layer — Session Data EO
-//
-// 会话数据面，负责消息透传
-
 #pragma once
 
 #include "common/Constants.hpp"
@@ -11,10 +6,10 @@
 namespace DPlane::session
 {
 
-class SessionData : public fw::EoBase<SessionData>
+class SessionDispatcher : public fw::EoBase<SessionDispatcher>
 {
   public:
-    explicit SessionData(fw::EoConfig &cfg, fw::EoAddress accessGatewayAddr);
+    explicit SessionDispatcher(fw::EoConfig &cfg, fw::EoAddress accessGatewayAddr);
 
     void handle(common::message::AiChatBusinessReq req);
     void handle(common::message::AiChatBusinessResp resp);

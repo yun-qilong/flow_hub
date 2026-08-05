@@ -76,8 +76,8 @@ const char *SysLog::featureLabel(LogFeature f)
     {
     case LogFeature::AICHAT:
         return "AIC";
-    case LogFeature::AIDISCUSS:
-        return "AID";
+    case LogFeature::AIAGORA:
+        return "AGA";
     }
     return "F??";
 }

@@ -16,7 +16,7 @@ enum class LogLevel : uint8_t
 enum class LogFeature : uint8_t
 {
     AICHAT = 0,
-    AIDISCUSS = 1
+    AIAGORA = 1
 };
 
 } // namespace utils

@@ -22,22 +22,23 @@ class TestRouter : public fw::EoTestBase
     void SetUp() override
     {
         businessMgrStub_ = makeStub();
-        sessionDataStub_ = makeStub();
+        sessionDispatcherStub_ = makeStub();
         businessStubA_ = makeStub();
         businessStubB_ = makeStub();
         businessStubC_ = makeStub();
 
         trackStub(businessMgrStub_);
-        trackStub(sessionDataStub_);
+        trackStub(sessionDispatcherStub_);
         trackStub(businessStubA_);
         trackStub(businessStubB_);
         trackStub(businessStubC_);
 
         testee_ = spawn<DPlane::business::Router>(stubAddress(businessMgrStub_),
-                                                  stubAddress(sessionDataStub_));
+                                                  stubAddress(sessionDispatcherStub_));
 
         checkOutput<TempConfig>(businessMgrStub_, [](TempConfig &msg) { EXPECT_EQ(msg.tag, 5); });
-        checkOutput<TempConfig>(sessionDataStub_, [](TempConfig &msg) { EXPECT_EQ(msg.tag, 3); });
+        checkOutput<TempConfig>(sessionDispatcherStub_,
+                                [](TempConfig &msg) { EXPECT_EQ(msg.tag, 3); });
     }
 
     template <typename M>
@@ -48,7 +49,7 @@ class TestRouter : public fw::EoTestBase
     }
 
     Stub businessMgrStub_;
-    Stub sessionDataStub_;
+    Stub sessionDispatcherStub_;
     Stub businessStubA_;
     Stub businessStubB_;
     Stub businessStubC_;

@@ -33,7 +33,6 @@ class CliAdapter : public AccessAdapterBase<CliAdapter, NoConnection>
   public:
     void showPrompt();
 
-    // must be public — called by AccessAdapterBase::run() via CRTP
     bool readFrontend();
     static bool readLine(std::string &line);
     void dispatchInput(const std::string &line);

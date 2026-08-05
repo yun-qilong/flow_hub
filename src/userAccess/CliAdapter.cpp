@@ -1,6 +1,7 @@
 #include "userAccess/CliAdapter.hpp"
 #include "common/Constants.hpp"
 #include "fw/EoEnv.hpp"
+#include "utils/SysLog.hpp"
 
 #include <iostream>
 #include <poll.h>
@@ -293,9 +294,9 @@ void CliAdapter::handle(const common::message::TaskCreateResp &resp)
     showPrompt();
 }
 
-void CliAdapter::handle(const common::message::TaskDeleteResp & /*resp*/)
+void CliAdapter::handle(const common::message::TaskDeleteResp &resp)
 {
-    // response is fire-and-forget; state already reset by /quit
+    LG_FEAT(AICHAT, "task deleted: sessionTaskId=0x%x", resp.head.sessionTaskId);
 }
 
 } // namespace userAccess

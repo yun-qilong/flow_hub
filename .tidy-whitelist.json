@@ -3,5 +3,8 @@
     "cppcoreguidelines-avoid-c-arrays,modernize-avoid-c-arrays": 1,
     "cppcoreguidelines-pro-bounds-pointer-arithmetic": 8,
     "google-readability-braces-around-statements,readability-braces-around-statements": 11
+  },
+  "src/userAccess/CliAdapter.cpp": {
+    "readability-convert-member-functions-to-static": 1
   }
 }

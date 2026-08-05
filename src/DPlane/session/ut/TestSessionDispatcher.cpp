@@ -1,4 +1,4 @@
-#include "DPlane/session/SessionData.hpp"
+#include "DPlane/session/SessionDispatcher.hpp"
 #include "fw/EoTestBase.hpp"
 
 #include <gtest/gtest.h>
@@ -9,7 +9,7 @@ namespace
 using namespace common::message;
 using utils::LogLevel;
 
-class TestSessionData : public fw::EoTestBase
+class TestSessionDispatcher : public fw::EoTestBase
 {
   protected:
     void SetUp() override
@@ -19,7 +19,7 @@ class TestSessionData : public fw::EoTestBase
         trackStub(accessGateway_);
         trackStub(router_);
 
-        testee_ = spawn<DPlane::session::SessionData>(stubAddress(accessGateway_));
+        testee_ = spawn<DPlane::session::SessionDispatcher>(stubAddress(accessGateway_));
 
         checkOutput<TempConfig>(accessGateway_, [](TempConfig &msg) { EXPECT_EQ(msg.tag, 2); });
         setRouterAddr();
@@ -33,7 +33,7 @@ class TestSessionData : public fw::EoTestBase
     void restartWithoutRouter()
     {
         stopActor(testee_);
-        testee_ = spawn<DPlane::session::SessionData>(stubAddress(accessGateway_));
+        testee_ = spawn<DPlane::session::SessionDispatcher>(stubAddress(accessGateway_));
         checkOutput<TempConfig>(accessGateway_, [](TempConfig &msg) { EXPECT_EQ(msg.tag, 2); });
     }
 
@@ -41,7 +41,7 @@ class TestSessionData : public fw::EoTestBase
     Stub router_;
 };
 
-TEST_F(TestSessionData, CheckHandleAiChatBusinessReq_ForwardToRouter)
+TEST_F(TestSessionDispatcher, CheckHandleAiChatBusinessReq_DelegateToRouter)
 {
     EXPECT_LOG(LogLevel::DBG, 1);
 
@@ -54,7 +54,7 @@ TEST_F(TestSessionData, CheckHandleAiChatBusinessReq_ForwardToRouter)
                                    [&](AiChatBusinessReq &msg) { EXPECT_EQ(msg.content, "test"); });
 }
 
-TEST_F(TestSessionData, CheckHandleAiChatBusinessReq_RouterNotSet)
+TEST_F(TestSessionDispatcher, CheckHandleAiChatBusinessReq_RouterNotSet)
 {
     restartWithoutRouter();
 
@@ -67,7 +67,7 @@ TEST_F(TestSessionData, CheckHandleAiChatBusinessReq_RouterNotSet)
     sendToMe(std::move(req));
 }
 
-TEST_F(TestSessionData, CheckHandleAiChatBusinessResp_ForwardToAccessGateway)
+TEST_F(TestSessionDispatcher, CheckHandleAiChatBusinessResp_DelegateToAccessGateway)
 {
     EXPECT_LOG(LogLevel::DBG, 1);
 

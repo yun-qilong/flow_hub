@@ -1,5 +1,3 @@
-// src/DPlane/business/AiChatBus.cpp
-
 #include "DPlane/business/AiChatBus.hpp"
 #include "common/TaskPool.hpp"
 #include "utils/JsonCoDec.hpp"
@@ -18,15 +16,15 @@ using AiChatBusinessResp = common::message::AiChatBusinessResp;
 using AiChatServiceReq = common::message::AiChatServiceReq;
 using AiChatServiceResp = common::message::AiChatServiceResp;
 
-// 首轮自动预置的 system prompt（含尾部逗号分隔符）
 static constexpr std::string_view SYSTEM_PROMPT =
     R"({"role":"system","content":"你是一个有帮助的AI助手。"},)";
 
 template <common::TaskType T>
-AiChatBus<T>::AiChatBus(fw::EoConfig &cfg, TaskPool &pool, fw::EoAddress sessionDataAddr,
+AiChatBus<T>::AiChatBus(fw::EoConfig &cfg, TaskPool &pool, fw::EoAddress sessionDispatcherAddr,
                         fw::EoAddress businessMgrAddr, fw::EoAddress routerAddr,
                         std::string defaultModelName)
-    : fw::EoBase<AiChatBus<T>>(cfg), pool_(pool), sessionDataAddr_(std::move(sessionDataAddr)),
+    : fw::EoBase<AiChatBus<T>>(cfg), pool_(pool),
+      sessionDispatcherAddr_(std::move(sessionDispatcherAddr)),
       businessMgrAddr_(std::move(businessMgrAddr)), routerAddr_(std::move(routerAddr)),
       defaultModelName_(std::move(defaultModelName))
 {
@@ -111,15 +109,15 @@ void AiChatBus<T>::processBusinessResp(ContextType &ctx, const AiChatServiceResp
         appendAssistantMsg(ctx, resp.content);
     }
 
-    if (not sessionDataAddr_)
+    if (not sessionDispatcherAddr_)
     {
-        LG_ERR("sessionDataAddr not set");
+        LG_ERR("sessionDispatcherAddr not set");
         return;
     }
 
     ctx.pendingReqSeq = 0;
 
-    this->sendTo(sessionDataAddr_, AiChatBusinessResp{resp.head, resp.success, resp.content});
+    this->sendTo(sessionDispatcherAddr_, AiChatBusinessResp{resp.head, resp.success, resp.content});
 }
 
 template <common::TaskType T>

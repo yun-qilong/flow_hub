@@ -40,7 +40,7 @@ class AccessGateway : public fw::EoBase<AccessGateway>
     static constexpr size_t kGtidToAdapterSize = 4096;
 
     fw::EoAddress sessionMgrAddr_;
-    fw::EoAddress sessionDataAddr_;
+    fw::EoAddress sessionDispatcherAddr_;
     fw::EoAddress cliAdapterAddr_;
     std::array<fw::EoAddress, kGtidToAdapterSize> gtidToAdapter_{};
 };

@@ -1,6 +1,3 @@
-// src/main.cpp
-// FlowHub — AI Chat 功能集成入口
-
 #include "common/TaskPool.hpp"
 #include "fw/EoEnv.hpp"
 #include "generated/TaskType.hpp"
@@ -12,7 +9,8 @@
 #include "DPlane/service/AiApiAdapter.hpp"
 #include "DPlane/service/ServiceGateway.hpp"
 #include "DPlane/service/ServiceMgr.hpp"
-#include "DPlane/session/SessionData.hpp"
+#include "DPlane/session/AiAgora.hpp"
+#include "DPlane/session/SessionDispatcher.hpp"
 #include "userAccess/AccessGateway.hpp"
 #include "userAccess/CliAdapter.hpp"
 #include "utils/SysLog.hpp"
@@ -64,13 +62,14 @@ void buildSystem(fw::EoEnv &env, TaskPool &pool, const ApiConfig &cfg,
 {
     auto accessGateway = env.createEo<userAccess::AccessGateway>(cliAdapter.myAddress());
 
-    auto sessionData = env.createEo<DPlane::session::SessionData>(accessGateway);
+    auto sessionDispatcher = env.createEo<DPlane::session::SessionDispatcher>(accessGateway);
     auto sessionMgr = env.createEo<CPlane::SessionMgr>(pool, accessGateway);
+    env.createEo<DPlane::session::AiAgora>();
 
     auto businessMgr = env.createEo<CPlane::BusinessMgr>(sessionMgr);
-    auto router = env.createEo<DPlane::business::Router>(businessMgr, sessionData);
+    auto router = env.createEo<DPlane::business::Router>(businessMgr, sessionDispatcher);
     auto aiChatBus = env.createEo<DPlane::business::AiChatBus<TaskType::AiAgora>>(
-        pool, sessionData, businessMgr, router, cfg.model);
+        pool, sessionDispatcher, businessMgr, router, cfg.model);
 
     auto serviceMgr = env.createEo<DPlane::service::ServiceMgr>(businessMgr);
     auto serviceGateway = env.createEo<DPlane::service::ServiceGateway>(serviceMgr, aiChatBus);
