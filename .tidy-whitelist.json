@@ -1,13 +1,10 @@
 {
-  "src/CPlane/SessionMgr.cpp": {
-    "cppcoreguidelines-avoid-c-arrays,modernize-avoid-c-arrays": 1
-  },
   "src/main.cpp": {
-    "cppcoreguidelines-avoid-c-arrays,modernize-avoid-c-arrays": 1,
     "readability-function-size": 1
   },
   "src/userAccess/CliAdapter.cpp": {
-    "readability-function-size": 2
+    "readability-function-size": 1,
+    "readability-function-cognitive-complexity": 1
   },
   "src/utils/JsonCoDec.cpp": {
     "cppcoreguidelines-avoid-c-arrays,modernize-avoid-c-arrays": 1,

@@ -1,0 +1,2 @@
+message ApiKeyUpdate
+    string apiKey

@@ -15,7 +15,6 @@ using GTID = common::GTID;
 using UserHead = common::message::UserHead;
 using AiChatServiceReq = common::message::AiChatServiceReq;
 using AiChatBusinessResp = common::message::AiChatBusinessResp;
-using AiChatMsgAck = common::message::AiChatMsgAck;
 using AiChatServiceReq = common::message::AiChatServiceReq;
 using AiChatServiceResp = common::message::AiChatServiceResp;
 
@@ -73,8 +72,6 @@ void AiChatBus<T>::processServiceRequest(ContextType &ctx, const AiChatBusinessR
     uint16_t seq = allocateAndRecordSeq(ctx);
     std::string body = buildMessagesJson(ctx, req.content);
     writeMessagesToContext(ctx, body);
-
-    sendAck(req.head, gtid, seq, req.content);
 
     LG_FEAT(AICHAT, "msg committed: seq=%u contentSize=%zuB%s", seq, req.content.size(),
             ctx.pendingReqSeq != 0 ? " (preempting)" : "");
@@ -142,19 +139,6 @@ uint16_t AiChatBus<T>::allocateAndRecordSeq(ContextType &ctx)
     }
 
     return seq;
-}
-
-template <common::TaskType T>
-void AiChatBus<T>::sendAck(const UserHead &reqHead, uint16_t gtid, uint16_t seq,
-                           const std::string &content)
-{
-    AiChatMsgAck ack;
-    ack.head = reqHead;
-    ack.head.gtidList = {gtid};
-    ack.head.targets = 0;
-    ack.seq = seq;
-    ack.content = content;
-    this->sendTo(sessionDataAddr_, std::move(ack));
 }
 
 template <common::TaskType T>

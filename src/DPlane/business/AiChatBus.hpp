@@ -36,7 +36,7 @@ class AiChatBus : public fw::EoBase<AiChatBus<T>>
     using ContextType = common::ContextTypeOf<T>;
 
     // pool: TaskPool 引用（Context 读写）
-    // sessionDataAddr: SessionData actor（回复 AiChatBusinessResp / AiChatMsgAck 的目标）
+    // sessionDataAddr: SessionData actor（回复 AiChatBusinessResp 的目标）
     explicit AiChatBus(fw::EoConfig &cfg, common::TaskPool &pool, fw::EoAddress sessionDataAddr,
                        fw::EoAddress businessMgrAddr, fw::EoAddress routerAddr,
                        std::string defaultModelName = "default");
@@ -60,8 +60,6 @@ class AiChatBus : public fw::EoBase<AiChatBus<T>>
     std::string buildMessagesJson(const ContextType &ctx, const std::string &content) const;
     void writeMessagesToContext(ContextType &ctx, const std::string &body);
     uint16_t allocateAndRecordSeq(ContextType &ctx);
-    void sendAck(const common::message::UserHead &reqHead, uint16_t gtid, uint16_t seq,
-                 const std::string &content);
     common::message::AiChatServiceReq
     buildAiChatServiceReq(const common::message::UserHead &reqHead, uint16_t gtid,
                           std::string messagesJson, const ContextType &ctx, uint16_t reqSeq);

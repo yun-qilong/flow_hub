@@ -22,11 +22,13 @@ class AiApiAdapter : public fw::EoBase<AiApiAdapter, true>
                  fw::EoAddress serviceGatewayAddr);
 
     void handle(const common::message::AiChatServiceReq &req);
+    void handle(const common::message::ApiKeyUpdate &msg);
 
   protected:
     void init() override
     {
         onMsg<common::message::AiChatServiceReq>();
+        onMsg<common::message::ApiKeyUpdate>();
     }
 
   private:

@@ -17,7 +17,6 @@ constexpr uint16_t kInvalidUid = 0xFFFF;
 constexpr common::GTID kInvalidGtid = 0xFFFF;
 constexpr uint16_t kMaxClientsPerAccess = 64;
 constexpr uint16_t kMaxGtidsPerUser = 128;
-constexpr uint16_t kMaxBatchCounterNum = 16;
 constexpr uint8_t kMaxUsernameLen = 12;
 
 constexpr common::ConnectionId kInvalidConnectionId = 0xFF;

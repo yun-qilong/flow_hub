@@ -53,7 +53,6 @@ class TestAiChatBus : public fw::EoTestBase
         msg.head.uid = kDefaultUid;
         msg.head.accessType = kDefaultAccessType;
         msg.head.appType = kDefaultAppType;
-        msg.head.sessionFlags = {};
         msg.head.gtidList = {gtid};
     }
 
@@ -81,13 +80,6 @@ TEST_F(TestAiChatBus, CheckHandleAiChatBusinessReq_FullFlow)
     fillHead(req, gtid_);
     req.content = "hello";
     sendToMe(std::move(req));
-
-    checkOutput<AiChatMsgAck>(sessionDataStub_,
-                              [](AiChatMsgAck &msg)
-                              {
-                                  EXPECT_EQ(msg.seq, 1);
-                                  EXPECT_EQ(msg.content, "hello");
-                              });
 
     checkOutput<AiChatServiceReq>(serviceGatewayStub_,
                                   [](AiChatServiceReq &msg)
@@ -119,8 +111,6 @@ TEST_F(TestAiChatBus, CheckHandleAiChatBusinessReq_NoServiceGateway)
     fillHead(req, gtid_);
     req.content = "hello";
     sendToMe(std::move(req));
-
-    checkOutput<AiChatMsgAck>(sessionDataStub_, [](AiChatMsgAck &msg) { EXPECT_EQ(msg.seq, 1); });
 }
 
 TEST_F(TestAiChatBus, CheckHandleAiChatServiceResp_NormalResp)

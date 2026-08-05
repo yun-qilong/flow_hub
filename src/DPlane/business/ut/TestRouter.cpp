@@ -46,7 +46,6 @@ class TestRouter : public fw::EoTestBase
         msg.head.uid = kDefaultUid;
         msg.head.accessType = kDefaultAccessType;
         msg.head.appType = kDefaultAppType;
-        msg.head.sessionFlags = {};
         msg.head.gtidList = std::move(gtidList);
     }
 

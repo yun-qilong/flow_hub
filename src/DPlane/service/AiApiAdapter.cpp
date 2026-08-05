@@ -32,6 +32,12 @@ utils::HttpClient::Response AiApiAdapter::callApi(const AiChatServiceReq &req)
     return utils::HttpClient::postJson(url, httpBody, apiKey_);
 }
 
+void AiApiAdapter::handle(const common::message::ApiKeyUpdate &msg)
+{
+    apiKey_ = msg.apiKey;
+    LG_INFO("API key updated");
+}
+
 void AiApiAdapter::handle(const AiChatServiceReq &req)
 {
     LG_DBG("HTTP request model=%s temp=%.1f msgSize=%zuB", req.modelName.c_str(), req.temperature,

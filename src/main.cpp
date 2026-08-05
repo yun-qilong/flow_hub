@@ -47,18 +47,18 @@ int main()
     const char *apiUrl = std::getenv("FLOWHUB_API_URL");
     const char *model = std::getenv("FLOWHUB_MODEL");
 
-    // 未设环境变量时使用硬编码默认值
+    // 默认值：模型固定 DeepSeek v4 flash；API key 不硬编码，由 CLI 每次 /new 输入
     if (apiKey == nullptr)
     {
-        apiKey = "sk-ck49fnhqcb9uo91pqjvra4o53or7hahiyrhps2ztsedcl0mi";
+        apiKey = "";
     }
     if (apiUrl == nullptr)
     {
-        apiUrl = "https://api.xiaomimimo.com";
+        apiUrl = "https://api.deepseek.com";
     }
     if (model == nullptr)
     {
-        model = "mimo-v2.5";
+        model = "deepseek-v4-flash";
     }
 
     LG_INFO("FlowHub v0.2.0 — AI Chat  API: %s  Model: %s", apiUrl, model);
@@ -72,7 +72,7 @@ int main()
 
     // --- Session 层 ---
     auto sessionData = env.createEo<DPlane::session::SessionData>(accessGateway);
-    auto sessionMgr = env.createEo<CPlane::SessionMgr>(pool, accessGateway, sessionData);
+    auto sessionMgr = env.createEo<CPlane::SessionMgr>(pool, accessGateway);
 
     // --- Business 层 ---
     // C面
@@ -90,6 +90,7 @@ int main()
     auto serviceGateway = env.createEo<DPlane::service::ServiceGateway>(serviceMgr, aiChatBus);
     auto aiApiAdapter = env.createEo<DPlane::service::AiApiAdapter>(
         apiUrl, apiKey, model ? model : "default", router, serviceMgr, serviceGateway);
+    cliAdapter.setAiApiAdapterAddr(aiApiAdapter);
 
     // ===== 2. 启动 CLI 前端 =====
     printBanner();

@@ -37,7 +37,6 @@ class TestAiApiAdapter : public fw::EoTestBase
         msg.head.uid = kDefaultUid;
         msg.head.accessType = kDefaultAccessType;
         msg.head.appType = kDefaultAppType;
-        msg.head.sessionFlags = {};
     }
 
     Stub routerStub_;
@@ -78,6 +77,13 @@ TEST_F(TestAiApiAdapter, CheckHandleAiChatServiceReq_RouterNotSet)
     sendToMeFrom(stubEo_, adapter, std::move(req));
 
     stopActor(adapter);
+}
+
+TEST_F(TestAiApiAdapter, CheckHandleApiKeyUpdate_NoOutput)
+{
+    EXPECT_LOG(LogLevel::INFO, 1);
+
+    sendToMe(ApiKeyUpdate{"new-key"});
 }
 
 } // namespace

@@ -48,46 +48,6 @@ void AccessGateway::forwardToAdapter(Msg &msg)
     }
 }
 
-void AccessGateway::handle(const common::message::UserRegisterReq &req)
-{
-    delegateTo(sessionMgrAddr_, common::message::UserRegisterReq{req});
-}
-
-void AccessGateway::handle(common::message::UserRegisterResp resp)
-{
-    routeToAdapters(resp);
-}
-
-void AccessGateway::handle(const common::message::UserLoginReq &req)
-{
-    delegateTo(sessionMgrAddr_, common::message::UserLoginReq{req});
-}
-
-void AccessGateway::handle(common::message::UserLoginResp resp)
-{
-    routeToAdapters(resp);
-}
-
-void AccessGateway::handle(const common::message::UserLogoutReq &req)
-{
-    delegateTo(sessionMgrAddr_, common::message::UserLogoutReq{req});
-}
-
-void AccessGateway::handle(common::message::UserLogoutResp resp)
-{
-    routeToAdapters(resp);
-}
-
-void AccessGateway::handle(const common::message::UserDeleteReq &req)
-{
-    delegateTo(sessionMgrAddr_, common::message::UserDeleteReq{req});
-}
-
-void AccessGateway::handle(common::message::UserDeleteResp resp)
-{
-    routeToAdapters(resp);
-}
-
 void AccessGateway::handle(const common::message::TaskCreateReq &req)
 {
     delegateTo(sessionMgrAddr_, common::message::TaskCreateReq{req});
@@ -128,16 +88,6 @@ void AccessGateway::handle(const common::message::TempConfig &msg)
 void AccessGateway::handle(common::message::AiChatBusinessResp resp)
 {
     routeToAdapters(resp);
-}
-
-void AccessGateway::handle(common::message::AiChatMsgAck ack)
-{
-    routeToAdapters(ack);
-}
-
-void AccessGateway::handle(common::message::TaskSync sync)
-{
-    routeToAdapters(sync);
 }
 
 } // namespace userAccess

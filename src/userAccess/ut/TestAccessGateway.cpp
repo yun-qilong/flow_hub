@@ -42,9 +42,9 @@ class TestAccessGateway : public fw::EoTestBase
 
 TEST_F(TestAccessGateway, CheckHandleTempConfig_Tag1SetsSessionMgr)
 {
-    auto req = UserRegisterReq{};
+    auto req = TaskCreateReq{};
     sendToMe(std::move(req));
-    checkOutput<UserRegisterReq>(sessionMgr_, [](UserRegisterReq &) {});
+    checkOutput<TaskCreateReq>(sessionMgr_, [](TaskCreateReq &) {});
 }
 
 TEST_F(TestAccessGateway, CheckHandleTempConfig_Tag2SetsSessionData)
@@ -58,9 +58,9 @@ TEST_F(TestAccessGateway, CheckHandleTempConfig_UnknownTagNoOp)
 {
     sendToMeFrom(sessionMgr_, testee_, TempConfig{99});
 
-    auto req = UserRegisterReq{};
+    auto req = TaskCreateReq{};
     sendToMe(std::move(req));
-    checkOutput<UserRegisterReq>(sessionMgr_, [](UserRegisterReq &) {});
+    checkOutput<TaskCreateReq>(sessionMgr_, [](TaskCreateReq &) {});
 }
 
 // ===== AiChatBusinessReq → sessionData =====
@@ -75,46 +75,6 @@ TEST_F(TestAccessGateway, CheckHandleAiChatBusinessReq_DelegateToSessionData)
                                    [](AiChatBusinessReq &msg) { EXPECT_EQ(msg.content, "hello"); });
 }
 
-// ===== UserRegisterResp: routeToAdapters 全边界 =====
-
-TEST_F(TestAccessGateway, CheckHandleUserRegisterResp_ForwardToAdapter)
-{
-    auto resp = UserRegisterResp{};
-    resp.head.accessType = kCliAccessType;
-    resp.head.targets = 0;
-    resp.username = "test";
-    sendToMe(std::move(resp));
-
-    checkOutput<UserRegisterResp>(cliAdapter_,
-                                  [](UserRegisterResp &msg) { EXPECT_EQ(msg.username, "test"); });
-}
-
-TEST_F(TestAccessGateway, CheckHandleUserRegisterResp_DropNoAdapter)
-{
-    auto resp = UserRegisterResp{};
-    resp.head.accessType = kEmptyAccessType;
-    resp.head.targets = 0;
-    sendToMe(std::move(resp));
-}
-
-TEST_F(TestAccessGateway, CheckHandleUserRegisterResp_FanOutSingleAdapter)
-{
-    auto resp = UserRegisterResp{};
-    resp.head.targets = 1ULL << static_cast<size_t>(kCliAccessType);
-    resp.username = "fanout";
-    sendToMe(std::move(resp));
-
-    checkOutput<UserRegisterResp>(cliAdapter_,
-                                  [](UserRegisterResp &msg) { EXPECT_EQ(msg.username, "fanout"); });
-}
-
-TEST_F(TestAccessGateway, CheckHandleUserRegisterResp_FanOutSkipEmptySlot)
-{
-    auto resp = UserRegisterResp{};
-    resp.head.targets = 1ULL << static_cast<size_t>(kEmptyAccessType);
-    sendToMe(std::move(resp));
-}
-
 // ===== TYPED_TEST: Req → sessionMgr =====
 
 template <typename ReqMsg>
@@ -122,8 +82,7 @@ class TestAccessGateway_ReqToSessionMgr : public TestAccessGateway
 {
 };
 
-using ReqMsgTypes = testing::Types<UserRegisterReq, UserLoginReq, UserLogoutReq, UserDeleteReq,
-                                   TaskCreateReq, TaskDeleteReq>;
+using ReqMsgTypes = testing::Types<TaskCreateReq, TaskDeleteReq>;
 
 TYPED_TEST_SUITE(TestAccessGateway_ReqToSessionMgr, ReqMsgTypes);
 
@@ -134,15 +93,14 @@ TYPED_TEST(TestAccessGateway_ReqToSessionMgr, DelegatesToSessionMgr)
     this->template checkOutput<TypeParam>(this->sessionMgr_, [](TypeParam &) {});
 }
 
-// ===== TYPED_TEST: Resp/Ack/Sync → forwardToAdapter =====
+// ===== TYPED_TEST: Resp → forwardToAdapter =====
 
 template <typename Msg>
 class TestAccessGateway_RespForwardToAdapter : public TestAccessGateway
 {
 };
 
-using RespMsgTypes = testing::Types<UserLoginResp, UserLogoutResp, UserDeleteResp, TaskCreateResp,
-                                    TaskDeleteResp, AiChatBusinessResp, AiChatMsgAck, TaskSync>;
+using RespMsgTypes = testing::Types<TaskCreateResp, TaskDeleteResp, AiChatBusinessResp>;
 
 TYPED_TEST_SUITE(TestAccessGateway_RespForwardToAdapter, RespMsgTypes);
 

@@ -1,7 +1,6 @@
 #pragma once
 
 #include "common/Constants.hpp"
-#include "common/SessionFlags.hpp"
 #include "common/UidUtil.hpp"
 #include "fw/EoTypes.hpp"
 #include "fw/ScopedEo.hpp"
@@ -24,7 +23,6 @@ class AccessAdapterBase : public utils::CrtpBase<Derived>
   public:
     static constexpr common::AppType kAppType = kApp;
     static constexpr common::AccessType kAccessType = kAcc;
-    static constexpr common::SessionFlags kSessionFlags = common::SessionFlags::make<kAppType>();
     static constexpr auto kPollTimeout = std::chrono::milliseconds{kPollTimeoutMs};
 
     explicit AccessAdapterBase(caf::actor_system &sys) : receiver_(sys)
@@ -79,7 +77,6 @@ class AccessAdapterBase : public utils::CrtpBase<Derived>
     {
         msg.head.accessType = kAccessType;
         msg.head.appType = kAppType;
-        msg.head.sessionFlags = kSessionFlags;
         msg.head.uid = common::kInvalidUid;
         msg.head.targets = 0;
     }

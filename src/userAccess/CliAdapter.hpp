@@ -24,22 +24,12 @@ class CliAdapter : public AccessAdapterBase<CliAdapter, common::AppType::AiAgora
     {
         onMsg<common::message::TempConfig>();
         onMsg<common::message::AiChatBusinessResp>();
-        onMsg<common::message::AiChatMsgAck>();
-        onMsg<common::message::TaskSync>();
-        onMsg<common::message::UserRegisterResp>();
-        onMsg<common::message::UserLoginResp>();
-        onMsg<common::message::UserLogoutResp>();
         onMsg<common::message::TaskCreateResp>();
         onMsg<common::message::TaskDeleteResp>();
     }
 
     void handle(const common::message::TempConfig &cfg);
     void handle(const common::message::AiChatBusinessResp &resp);
-    void handle(const common::message::AiChatMsgAck &ack);
-    void handle(const common::message::TaskSync &sync);
-    void handle(const common::message::UserRegisterResp &resp);
-    void handle(const common::message::UserLoginResp &resp);
-    void handle(const common::message::UserLogoutResp &resp);
     void handle(const common::message::TaskCreateResp &resp);
     void handle(const common::message::TaskDeleteResp &resp);
 
@@ -49,32 +39,34 @@ class CliAdapter : public AccessAdapterBase<CliAdapter, common::AppType::AiAgora
     // must be public — called by AccessAdapterBase::run() via CRTP
     bool readFrontend();
 
+    void setAiApiAdapterAddr(fw::EoAddress addr)
+    {
+        aiApiAdapterAddr_ = std::move(addr);
+    }
+
   private:
     enum class State : uint8_t
     {
-        NotLoggedIn,
-        LoggedInWithGtid
+        HaveNotGtid,
+        EnteringKey,
+        HasGtid
     };
 
-    State state_ = State::NotLoggedIn;
+    State state_ = State::HaveNotGtid;
     bool waiting_ = false;
 
     template <State S>
     void handleCommandImpl(const std::string &line);
     void handleCommand(const std::string &line);
-    void sendRegister(const std::string &username);
-    void sendLogin(const std::string &username);
-    void sendLogout();
-    void sendDelete();
     void sendTaskCreate();
+    void sendTaskDelete();
     void sendChatMessage(const std::string &content);
+    void sendApiKey(const std::string &key);
     void showHelp();
     void resetState();
 
-    std::string currentUsername_;
-    uint16_t currentUid_ = 0xFFFF;
     uint16_t currentGtid_ = 0xFFFF;
-    static constexpr common::ConnectionId kConnectionId = 0;
+    fw::EoAddress aiApiAdapterAddr_;
 };
 
 } // namespace userAccess
