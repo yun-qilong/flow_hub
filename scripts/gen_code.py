@@ -444,25 +444,26 @@ def parse_mt(filepath: Path, src_root: Path, mt_hpp_map: dict[str, str]) -> list
             stripped = line.strip()
 
             if stripped == "cacheLinePadding":
-                current["fields"].append(("__padding__", None))
+                current["fields"].append(("__padding__", None, None))
                 continue
 
-            m = re.match(r"^(\w+(?:<[^>]+>)?)(?:\[(\d+)\])?\s+(\w+)$", stripped)
+            m = re.match(r"^(\w+(?:<[^>]+>)?)(?:\[(\d+)\])?\s+(\w+)(?:\s*=\s*(\S+))?$", stripped)
             if not m:
                 print(f"WARNING: {filepath}:{lineno}: "
-                      f"expected '<type> <name>', '<Type<Args>> <name>', or '<type>[<size>] <name>', got '{stripped}'")
+                      f"expected '<type> <name>[ = <value>]', got '{stripped}'")
                 continue
 
             base_type = m.group(1)
             array_size = m.group(2)
             field_name = m.group(3)
+            default_value = m.group(4)
 
             if array_size is not None:
                 field_type = f"{base_type}[{array_size}]"
             else:
                 field_type = base_type
 
-            current["fields"].append((field_type, field_name))
+            current["fields"].append((field_type, field_name, default_value))
 
     if current:
         definitions.append(current)
@@ -619,7 +620,7 @@ def field_includes(fields: list, known_types: dict[str, str] | None = None) -> l
     incs: set[str] = set()
     caf_incs: set[str] = set()
     needs_constants = False
-    for ftype_raw, _ in fields:
+    for ftype_raw, _, _ in fields:
         if ftype_raw == "__padding__":
             continue
         if ARRAY_RE.match(ftype_raw):
@@ -670,11 +671,11 @@ def _to_string_scalar(mt_type: str, access_expr: str,
 def gen_to_string_body(fields: list,
                        known_types: dict[str, str] | None = None) -> list[str]:
     lines = ['        std::string result;']
-    real = [(t, n) for t, n in fields if t != "__padding__"]
+    real = [(t, n, _d) for t, n, _d in fields if t != "__padding__"]
     if not real:
         lines.append('        return result;')
         return lines
-    for idx, (ftype, fname) in enumerate(real):
+    for idx, (ftype, fname, _d) in enumerate(real):
         comma = "," if idx < len(real) - 1 else ""
         m = ARRAY_RE.match(ftype)
         if m:
@@ -704,7 +705,7 @@ def generate_message_hpp(defn: dict,
                          known_types: dict[str, str] | None = None) -> str:
     name = defn["name"]
     fields = defn["fields"]
-    field_names = [fn for _, fn in fields]
+    field_names = [fn for _, fn, _ in fields]
 
     out: list[str] = []
     out.append(f"// Auto-generated from {Path(defn['file']).name} — DO NOT EDIT")
@@ -722,7 +723,7 @@ def generate_message_hpp(defn: dict,
     out.append("")
     out.append(f"struct {name}")
     out.append("{")
-    for ftype, fname in fields:
+    for ftype, fname, _d in fields:
         out.append(f"    {resolve_cpp_type(ftype)} {fname};")
     out.append("};")
     out.append("")
@@ -799,7 +800,7 @@ def generate_context_hpp(defn: dict,
         out.append("{")
 
     next_needs_align = False
-    for ftype, fname in fields:
+    for ftype, fname, _d in fields:
         if ftype == "__padding__":
             next_needs_align = True
             out.append("")
@@ -823,11 +824,13 @@ def generate_context_hpp(defn: dict,
     # ---- clear(): reset all fields — nested structs call their own clear()
     out.append(f"    void clear()")
     out.append(f"    {{")
-    for ftype, fname in fields:
+    for ftype, fname, default in fields:
         if ftype == "__padding__":
             continue
+        if default is not None:
+            out.append(f"        {fname} = {default};")
         # 自定义类型（.mt 定义的 struct/context），调其 clear() 实现级联
-        if known_types and ftype in known_types:
+        elif known_types and ftype in known_types:
             out.append(f"        {fname}.clear();")
         else:
             out.append(f"        {fname} = {{}};")

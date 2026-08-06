@@ -1,32 +1,70 @@
 #include "DPlane/business/AiChatBus.hpp"
+#include "common/Constants.hpp"
 #include "common/TaskPool.hpp"
-#include "utils/JsonCoDec.hpp"
+#include "utils/Result.hpp"
+#include "utils/TryCatch.hpp"
 
 #include <cstring>
+#include <nlohmann/json.hpp>
+#include <stdexcept>
 
 namespace DPlane::business
 {
 
 using TaskPool = common::TaskPool;
-using AiChatBusinessReq = common::message::AiChatBusinessReq;
-using GTID = common::GTID;
-using UserHead = common::message::UserHead;
-using AiChatServiceReq = common::message::AiChatServiceReq;
-using AiChatBusinessResp = common::message::AiChatBusinessResp;
+using AiChatConfigReq = common::message::AiChatConfigReq;
+using AiChatConfigResp = common::message::AiChatConfigResp;
+using AiChatReq = common::message::AiChatReq;
+using AiChatResp = common::message::AiChatResp;
 using AiChatServiceReq = common::message::AiChatServiceReq;
 using AiChatServiceResp = common::message::AiChatServiceResp;
+using UserHead = common::message::UserHead;
 
-static constexpr std::string_view SYSTEM_PROMPT =
-    R"({"role":"system","content":"你是一个有帮助的AI助手。"},)";
+namespace
+{
+
+constexpr uint8_t kMaxDebateAiIndex = 7;
+constexpr uint8_t kJudgeIndex = 0xFE;
+constexpr uint8_t kInvalidAiIndex = 0xFF;
+
+struct ConfigFields
+{
+    std::string model;
+    std::string apiUrl;
+    std::string apiKey;
+    double temperature = 0.0;
+};
+
+utils::Result<ConfigFields> extractConfigFields(const std::string &payload)
+{
+    return utils::tryOrFailed(
+        [&]() -> utils::Result<ConfigFields>
+        {
+            auto root = nlohmann::json::parse(payload);
+            if (not root.is_object() or not root.at("model").is_string() or
+                not root.at("apiUrl").is_string() or not root.at("apiKey").is_string() or
+                not root.at("temperature").is_number())
+            {
+                return std::nullopt;
+            }
+            ConfigFields fields;
+            fields.model = root.at("model").get<std::string>();
+            fields.apiUrl = root.at("apiUrl").get<std::string>();
+            fields.apiKey = root.at("apiKey").get<std::string>();
+            fields.temperature = root.at("temperature").get<double>();
+            return utils::Result<ConfigFields>{std::move(fields)};
+        },
+        []() { return utils::Result<ConfigFields>{std::nullopt}; });
+}
+
+} // namespace
 
 template <common::TaskType T>
 AiChatBus<T>::AiChatBus(fw::EoConfig &cfg, TaskPool &pool, fw::EoAddress sessionDispatcherAddr,
-                        fw::EoAddress businessMgrAddr, fw::EoAddress routerAddr,
-                        std::string defaultModelName)
+                        fw::EoAddress businessMgrAddr, fw::EoAddress routerAddr)
     : fw::EoBase<AiChatBus<T>>(cfg), pool_(pool),
       sessionDispatcherAddr_(std::move(sessionDispatcherAddr)),
-      businessMgrAddr_(std::move(businessMgrAddr)), routerAddr_(std::move(routerAddr)),
-      defaultModelName_(std::move(defaultModelName))
+      businessMgrAddr_(std::move(businessMgrAddr)), routerAddr_(std::move(routerAddr))
 {
     this->sendTo(routerAddr_, common::message::TempConfig{6});
 }
@@ -41,165 +79,160 @@ void AiChatBus<T>::handle(const common::message::TempConfig &msg)
 }
 
 template <common::TaskType T>
-void AiChatBus<T>::handle(const AiChatBusinessReq &req)
+bool AiChatBus<T>::applyConfig(ContextType &ctx, const AiChatConfigReq &req)
 {
-    auto gtid = req.head.busTaskIds.at(0);
-    LG_FEAT(AICHAT, "received AiChatBusinessReq: gtid=0x%x contentSize=%zuB", gtid,
-            req.content.size());
+    return extractConfigFields(req.payload)
+        .useOrFailed(
+            [&](ConfigFields &fields)
+            {
+                if (not writeCString(ctx.modelName, fields.model) or
+                    not writeCString(ctx.apiUrl, fields.apiUrl) or
+                    not writeCString(ctx.apiKey, fields.apiKey) or
+                    not writeCString(ctx.systemPrompt, req.systemPrompt))
+                {
+                    return false;
+                }
+                ctx.temperature = fields.temperature;
+                ctx.aiIndex = req.aiIndex;
+                return true;
+            },
+            []() { return false; });
+}
 
-    pool_.getContext<ContextType>(gtid).useOrFailed(
-        [&](ContextType &ctx) { processServiceRequest(ctx, req, gtid); },
-        [gtid]() { LG_ERR("no context for gtid=0x%x", gtid); });
+template <common::TaskType T>
+void AiChatBus<T>::sendConfigResp(const UserHead &head, bool isSuccess)
+{
+    this->sendTo(sessionDispatcherAddr_, AiChatConfigResp{head, isSuccess});
+}
+
+template <common::TaskType T>
+void AiChatBus<T>::handle(const AiChatConfigReq &req)
+{
+    pool_.getContext<ContextType>(firstBusTaskId(req.head))
+        .useOrFailed(
+            [&](ContextType &ctx)
+            {
+                bool isSuccess = isValidAiIndex(req.aiIndex) and applyConfig(ctx, req);
+                sendConfigResp(req.head, isSuccess);
+            },
+            [&]()
+            {
+                LG_WRN("AiChatBus: context not found, busTaskIds.size=%zu, gtid=%u",
+                       req.head.busTaskIds.size(), static_cast<unsigned>(firstBusTaskId(req.head)));
+                sendConfigResp(req.head, false);
+            });
+}
+
+template <common::TaskType T>
+bool AiChatBus<T>::isValidAiIndex(uint8_t aiIndex) const
+{
+    return aiIndex <= kMaxDebateAiIndex or aiIndex == kJudgeIndex;
+}
+
+template <common::TaskType T>
+void AiChatBus<T>::sendChatToService(const ContextType &ctx, const std::string &messagesJson,
+                                     const UserHead &head)
+{
+    nlohmann::json messages = nlohmann::json::array();
+    messages.push_back({{"role", "system"}, {"content", readCString(ctx.systemPrompt)}});
+    auto parsed = nlohmann::json::parse(messagesJson);
+    if (not parsed.is_array())
+    {
+        LG_WRN("AiChatBus: messagesJson must be an array");
+        throw std::invalid_argument("");
+    }
+    messages.insert(messages.end(), parsed.begin(), parsed.end());
+    this->sendTo(serviceGatewayAddr_, buildServiceReq(head, messages.dump(), ctx));
+}
+
+template <common::TaskType T>
+common::GTID AiChatBus<T>::firstBusTaskId(const UserHead &head) const
+{
+    if (head.busTaskIds.empty())
+    {
+        return common::kInvalidGtid;
+    }
+    return head.busTaskIds.front();
+}
+
+template <common::TaskType T>
+AiChatServiceReq AiChatBus<T>::buildServiceReq(const UserHead &head,
+                                               const std::string &messagesJson,
+                                               const ContextType &ctx) const
+{
+    return AiChatServiceReq{head, messagesJson, readCString(ctx.modelName), ctx.temperature, 0};
+}
+
+template <common::TaskType T>
+void AiChatBus<T>::sendChatResp(const UserHead &head, bool success, const std::string &content,
+                                uint8_t aiIndex)
+{
+    this->sendTo(sessionDispatcherAddr_, AiChatResp{head, success, aiIndex, content});
+}
+
+template <common::TaskType T>
+void AiChatBus<T>::handle(const AiChatReq &req)
+{
+    pool_.getContext<ContextType>(firstBusTaskId(req.head))
+        .useOrFailed(
+            [&](ContextType &ctx)
+            {
+                utils::tryOrFailed(
+                    [&]() { sendChatToService(ctx, req.messagesJson, req.head); },
+                    [&]()
+                    {
+                        LG_WRN("AiChatBus: invalid messagesJson, chat request rejected");
+                        sendChatResp(req.head, false, "", ctx.aiIndex);
+                    });
+            },
+            [&]()
+            {
+                LG_WRN("AiChatBus: context not found, busTaskIds.size=%zu, gtid=%u",
+                       req.head.busTaskIds.size(), static_cast<unsigned>(firstBusTaskId(req.head)));
+                sendChatResp(req.head, false, "", kInvalidAiIndex);
+            });
 }
 
 template <common::TaskType T>
 void AiChatBus<T>::handle(const AiChatServiceResp &resp)
 {
-    auto gtid = resp.head.busTaskIds.at(0);
-    LG_FEAT(AICHAT, "received AiChatServiceResp: gtid=0x%x contentSize=%zuB", gtid,
-            resp.content.size());
-
-    pool_.getContext<ContextType>(gtid).useOrFailed(
-        [&](ContextType &ctx) { processBusinessResp(ctx, resp); },
-        [gtid]() { LG_ERR("no context for gtid=0x%x", gtid); });
+    pool_.getContext<ContextType>(firstBusTaskId(resp.head))
+        .useOrFailed([&](ContextType &ctx)
+                     { sendChatResp(resp.head, resp.success, resp.content, ctx.aiIndex); },
+                     [&]()
+                     {
+                         LG_WRN("AiChatBus: context not found, busTaskIds.size=%zu, gtid=%u",
+                                resp.head.busTaskIds.size(),
+                                static_cast<unsigned>(firstBusTaskId(resp.head)));
+                     });
 }
 
 template <common::TaskType T>
-void AiChatBus<T>::processServiceRequest(ContextType &ctx, const AiChatBusinessReq &req, GTID gtid)
+template <size_t N>
+std::string AiChatBus<T>::readCString(const std::array<uint8_t, N> &data) const
 {
-    uint16_t seq = allocateAndRecordSeq(ctx);
-    std::string body = buildMessagesJson(ctx, req.content);
-    writeMessagesToContext(ctx, body);
-
-    LG_FEAT(AICHAT, "msg committed: seq=%u contentSize=%zuB%s", seq, req.content.size(),
-            ctx.pendingReqSeq != 0 ? " (preempting)" : "");
-
-    ctx.pendingReqSeq = seq;
-
-    if (not serviceGatewayAddr_)
+    std::string out;
+    for (size_t i = 0; i < N and data.at(i) != 0; ++i)
     {
-        LG_ERR("serviceGatewayAddr not set");
-        return;
+        out.push_back(static_cast<char>(data.at(i)));
     }
-
-    auto serviceReq = buildAiChatServiceReq(req.head, gtid, "[" + std::move(body) + "]", ctx, seq);
-    LG_FEAT(AICHAT, "sending AiChatServiceReq (reqSeq=%u) to gateway", seq);
-    this->sendTo(serviceGatewayAddr_, std::move(serviceReq));
+    return out;
 }
 
 template <common::TaskType T>
-void AiChatBus<T>::processBusinessResp(ContextType &ctx, const AiChatServiceResp &resp)
+template <size_t N>
+bool AiChatBus<T>::writeCString(std::array<uint8_t, N> &data, const std::string &value)
 {
-    if (ctx.pendingReqSeq == 0)
+    if (value.size() >= N)
     {
-        LG_ERR("no pending request, dropping AiChatServiceResp");
-        return;
+        LG_WRN("AiChatBus: writeCString value too long, size=%zu, capacity=%zu", value.size(), N);
+        return false;
     }
-
-    if (resp.reqSeq != ctx.pendingReqSeq)
-    {
-        LG_WRN("stale response discarded (resp.reqSeq=%u != pendingReqSeq=%u)", resp.reqSeq,
-               ctx.pendingReqSeq);
-        return;
-    }
-
-    if (resp.success)
-    {
-        allocateAndRecordSeq(ctx);
-        appendAssistantMsg(ctx, resp.content);
-    }
-
-    if (not sessionDispatcherAddr_)
-    {
-        LG_ERR("sessionDispatcherAddr not set");
-        return;
-    }
-
-    ctx.pendingReqSeq = 0;
-
-    this->sendTo(sessionDispatcherAddr_, AiChatBusinessResp{resp.head, resp.success, resp.content});
+    std::memcpy(data.data(), value.data(), value.size());
+    data.at(value.size()) = 0;
+    return true;
 }
 
-template <common::TaskType T>
-uint16_t AiChatBus<T>::allocateAndRecordSeq(ContextType &ctx)
-{
-    int oldLen = ctx.messagesLen;
-    ctx.messageCount++;
-    uint16_t seq = ctx.messageCount;
-
-    if (seq == 1)
-    {
-        ctx.messageOffsets.at(0) = static_cast<uint16_t>(SYSTEM_PROMPT.size());
-    }
-    else
-    {
-        ctx.messageOffsets.at(seq - 1) = static_cast<uint16_t>(oldLen + 1);
-    }
-
-    return seq;
-}
-
-template <common::TaskType T>
-std::string AiChatBus<T>::buildMessagesJson(const ContextType &ctx,
-                                            const std::string &content) const
-{
-    std::string userMsg = utils::JsonCoDec::buildMsgObj("user", content);
-
-    if (ctx.messagesLen == 0)
-    {
-        return R"({"role":"system","content":"你是一个有帮助的AI助手。"},)" + userMsg;
-    }
-
-    auto *buf = reinterpret_cast<const char *>(ctx.messagesBuffer.data());
-    return std::string(buf, ctx.messagesLen) + "," + userMsg;
-}
-
-template <common::TaskType T>
-void AiChatBus<T>::writeMessagesToContext(ContextType &ctx, const std::string &body)
-{
-    int newLen = static_cast<int>(body.size());
-    if (newLen <= static_cast<int>(ctx.messagesBuffer.size()))
-    {
-        std::memcpy(ctx.messagesBuffer.data(), body.data(), body.size());
-        ctx.messagesLen = newLen;
-    }
-}
-
-template <common::TaskType T>
-AiChatServiceReq AiChatBus<T>::buildAiChatServiceReq(const UserHead &reqHead, uint16_t gtid,
-                                                     std::string messagesJson,
-                                                     const ContextType &ctx, uint16_t reqSeq)
-{
-    std::string modelName(
-        reinterpret_cast<const char *>(ctx.modelName.data()),
-        strnlen(reinterpret_cast<const char *>(ctx.modelName.data()), ctx.modelName.size()));
-
-    AiChatServiceReq req;
-    req.head.sessionTaskId = reqHead.sessionTaskId;
-    req.head.busTaskIds = {gtid};
-    req.messagesJson = std::move(messagesJson);
-    req.modelName = modelName.empty() ? defaultModelName_ : modelName;
-    req.temperature = ctx.temperature > 0.0 ? ctx.temperature : 0.7;
-    req.reqSeq = reqSeq;
-    return req;
-}
-
-template <common::TaskType T>
-void AiChatBus<T>::appendAssistantMsg(ContextType &ctx, const std::string &content)
-{
-    std::string append = "," + utils::JsonCoDec::buildMsgObj("assistant", content);
-    int newLen = ctx.messagesLen + static_cast<int>(append.size());
-
-    if (newLen > static_cast<int>(ctx.messagesBuffer.size()))
-    {
-        LG_ERR("messagesBuffer overflow! need %d max %zu", newLen, ctx.messagesBuffer.size());
-        return;
-    }
-
-    std::memcpy(&ctx.messagesBuffer.at(ctx.messagesLen), append.data(), append.size());
-    ctx.messagesLen = newLen;
-}
-
-template class AiChatBus<common::TaskType::AiAgora>;
+template class AiChatBus<common::TaskType::AiChat>;
 
 } // namespace DPlane::business

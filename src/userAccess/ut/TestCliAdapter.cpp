@@ -157,11 +157,11 @@ TEST_F(TestCliAdapter, DispatchInput_HasGtid_TextSendsChat)
 
     cli_->dispatchInput("hello");
 
-    checkOutput<AiChatBusinessReq>(
-        [](AiChatBusinessReq &msg)
+    checkOutput<AiChatReq>(
+        [](AiChatReq &msg)
         {
             EXPECT_EQ(msg.head.sessionTaskId, 0x1234);
-            EXPECT_EQ(msg.content, "hello");
+            EXPECT_THAT(msg.messagesJson, testing::HasSubstr("hello"));
         });
     EXPECT_TRUE(isWaiting());
 }
@@ -359,7 +359,7 @@ TEST_F(TestCliAdapter, HandleChatResp_PrintsContent)
     setWaiting(true);
     clearOutput();
 
-    auto resp = AiChatBusinessResp{};
+    auto resp = AiChatResp{};
     fillDefaultHead(resp);
     resp.content = "reply";
     sendToCli(std::move(resp));

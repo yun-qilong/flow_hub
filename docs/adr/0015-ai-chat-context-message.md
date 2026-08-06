@@ -64,7 +64,7 @@ AiChatContext（.mt 定义）：
   uint8[128]   apiUrl            API 端点
   uint8[128]   apiKey            API 密钥
   double       temperature       温度参数
-  AiIndex      aiIndex           AI 身份编号（0~7 为参辩 AI，0xFF=裁判）
+  AiIndex      aiIndex           AI 身份编号（0~7 为参辩 AI，0xFE=裁判，0xFF=无效）
   EoAddress    businessReplyAddr 回复目标地址（→ sessionDispatcherAddr_）
 ```
 

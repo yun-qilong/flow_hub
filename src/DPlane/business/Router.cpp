@@ -5,7 +5,8 @@
 namespace DPlane::business
 {
 
-using AiChatBusinessReq = common::message::AiChatBusinessReq;
+using AiChatConfigReq = common::message::AiChatConfigReq;
+using AiChatReq = common::message::AiChatReq;
 using AiChatServiceResp = common::message::AiChatServiceResp;
 using RouterConfigReq = common::message::RouterConfigReq;
 using RouterConfigResp = common::message::RouterConfigResp;
@@ -24,7 +25,7 @@ void Router::handle(const common::message::TempConfig &msg)
 {
     if (msg.tag == 6)
     {
-        auto idx = static_cast<uint16_t>(common::TaskType::AiAgora);
+        auto idx = static_cast<uint16_t>(common::TaskType::AiChat);
         routeTable_.at(idx) = senderAddress();
     }
 }
@@ -47,11 +48,16 @@ void Router::handle(const RouterReconfigReq &req)
     replyToSender(RouterReconfigResp{true});
 }
 
-void Router::handle(AiChatBusinessReq req)
+void Router::handle(AiChatConfigReq req)
 {
-    LG_DBG("received AiChatBusinessReq: gtid=0x%x contentSize=%zuB", req.head.sessionTaskId,
-           req.content.size());
-    routeAndForward(std::move(req), "AiChatBusinessReq");
+    LG_DBG("received AiChatConfigReq");
+    routeAndForward(std::move(req), "AiChatConfigReq");
+}
+
+void Router::handle(AiChatReq req)
+{
+    LG_DBG("received AiChatReq");
+    routeAndForward(std::move(req), "AiChatReq");
 }
 
 void Router::handle(AiChatServiceResp resp)

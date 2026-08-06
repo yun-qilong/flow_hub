@@ -24,13 +24,13 @@ class CliAdapter : public AccessAdapterBase<CliAdapter, NoConnection>
     explicit CliAdapter(caf::actor_system &sys) : Base(sys)
     {
         onMsg<common::message::TempConfig>();
-        onMsg<common::message::AiChatBusinessResp>();
+        onMsg<common::message::AiChatResp>();
         onMsg<common::message::TaskCreateResp>();
         onMsg<common::message::TaskDeleteResp>();
     }
 
     void handle(const common::message::TempConfig &cfg);
-    void handle(const common::message::AiChatBusinessResp &resp);
+    void handle(const common::message::AiChatResp &resp);
     void handle(const common::message::TaskCreateResp &resp);
     void handle(const common::message::TaskDeleteResp &resp);
 

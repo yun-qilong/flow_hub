@@ -11,16 +11,16 @@ class SessionDispatcher : public fw::EoBase<SessionDispatcher>
   public:
     explicit SessionDispatcher(fw::EoConfig &cfg, fw::EoAddress accessGatewayAddr);
 
-    void handle(common::message::AiChatBusinessReq req);
-    void handle(common::message::AiChatBusinessResp resp);
+    void handle(common::message::AiChatReq req);
+    void handle(common::message::AiChatResp resp);
     void handle(const common::message::TempConfig &msg);
 
   protected:
     void init() override
     {
         onMsg<common::message::TempConfig>();
-        onMsg<common::message::AiChatBusinessReq>();
-        onMsg<common::message::AiChatBusinessResp>();
+        onMsg<common::message::AiChatReq>();
+        onMsg<common::message::AiChatResp>();
     }
 
   private:

@@ -14,7 +14,7 @@ constexpr common::GTID kGtidIdx0 = 0x0001;
 constexpr common::GTID kGtidIdx1 = 0x0041;
 constexpr common::GTID kGtidIdx2 = 0x0081;
 constexpr common::GTID kAiChatGtid =
-    static_cast<common::GTID>((static_cast<uint16_t>(common::TaskType::AiAgora) << 6) | 1);
+    static_cast<common::GTID>((static_cast<uint16_t>(common::TaskType::AiChat) << 6) | 1);
 
 class TestRouter : public fw::EoTestBase
 {
@@ -48,6 +48,14 @@ class TestRouter : public fw::EoTestBase
         msg.head.busTaskIds = std::move(busTaskIds);
     }
 
+    AiChatReq makeChatReq(std::vector<common::GTID> busTaskIds)
+    {
+        AiChatReq req;
+        fillHead(req, std::move(busTaskIds));
+        req.messagesJson = R"([{"role":"user","content":"hi"}])";
+        return req;
+    }
+
     Stub businessMgrStub_;
     Stub sessionDispatcherStub_;
     Stub businessStubA_;
@@ -61,16 +69,15 @@ TEST_F(TestRouter, CheckHandleTempConfig_Tag6RegistersRoute)
 
     EXPECT_LOG(LogLevel::DBG, 2);
 
-    AiChatBusinessReq req;
-    fillHead(req, {kAiChatGtid});
+    auto req = makeChatReq({kAiChatGtid});
     sendToMe(std::move(req));
 
-    checkOutput<AiChatBusinessReq>(businessStubA_,
-                                   [](AiChatBusinessReq &msg)
-                                   {
-                                       ASSERT_EQ(msg.head.busTaskIds.size(), 1u);
-                                       EXPECT_EQ(msg.head.busTaskIds.at(0), kAiChatGtid);
-                                   });
+    checkOutput<AiChatReq>(businessStubA_,
+                           [](AiChatReq &msg)
+                           {
+                               ASSERT_EQ(msg.head.busTaskIds.size(), 1u);
+                               EXPECT_EQ(msg.head.busTaskIds.at(0), kAiChatGtid);
+                           });
 }
 
 TEST_F(TestRouter, CheckHandleRouterConfigReq_InstallAndReply)
@@ -85,12 +92,11 @@ TEST_F(TestRouter, CheckHandleRouterConfigReq_InstallAndReply)
 
     EXPECT_LOG(LogLevel::DBG, 2);
 
-    AiChatBusinessReq req;
-    fillHead(req, {kGtidIdx0});
+    auto req = makeChatReq({kGtidIdx0});
     sendToMe(std::move(req));
 
-    checkOutput<AiChatBusinessReq>(businessStubA_, [](AiChatBusinessReq &msg)
-                                   { EXPECT_EQ(msg.head.busTaskIds.size(), 1u); });
+    checkOutput<AiChatReq>(businessStubA_,
+                           [](AiChatReq &msg) { EXPECT_EQ(msg.head.busTaskIds.size(), 1u); });
 }
 
 TEST_F(TestRouter, CheckHandleRouterReconfigReq_UpdateAndReply)
@@ -105,12 +111,11 @@ TEST_F(TestRouter, CheckHandleRouterReconfigReq_UpdateAndReply)
 
     EXPECT_LOG(LogLevel::DBG, 2);
 
-    AiChatBusinessReq req;
-    fillHead(req, {kGtidIdx0});
+    auto req = makeChatReq({kGtidIdx0});
     sendToMe(std::move(req));
 
-    checkOutput<AiChatBusinessReq>(businessStubA_, [](AiChatBusinessReq &msg)
-                                   { EXPECT_EQ(msg.head.busTaskIds.size(), 1u); });
+    checkOutput<AiChatReq>(businessStubA_,
+                           [](AiChatReq &msg) { EXPECT_EQ(msg.head.busTaskIds.size(), 1u); });
 }
 
 TEST_F(TestRouter, CheckRouteAndForward_SingleBusTaskId)
@@ -124,18 +129,15 @@ TEST_F(TestRouter, CheckRouteAndForward_SingleBusTaskId)
 
     EXPECT_LOG(LogLevel::DBG, 2);
 
-    AiChatBusinessReq req;
-    fillHead(req, {kGtidIdx0});
-    req.content = "test";
+    auto req = makeChatReq({kGtidIdx0});
     sendToMe(std::move(req));
 
-    checkOutput<AiChatBusinessReq>(businessStubA_,
-                                   [](AiChatBusinessReq &msg)
-                                   {
-                                       EXPECT_EQ(msg.content, "test");
-                                       ASSERT_EQ(msg.head.busTaskIds.size(), 1u);
-                                       EXPECT_EQ(msg.head.busTaskIds.at(0), kGtidIdx0);
-                                   });
+    checkOutput<AiChatReq>(businessStubA_,
+                           [](AiChatReq &msg)
+                           {
+                               ASSERT_EQ(msg.head.busTaskIds.size(), 1u);
+                               EXPECT_EQ(msg.head.busTaskIds.at(0), kGtidIdx0);
+                           });
 }
 
 TEST_F(TestRouter, CheckRouteAndForward_MultipleBusTaskIds)
@@ -151,32 +153,60 @@ TEST_F(TestRouter, CheckRouteAndForward_MultipleBusTaskIds)
 
     EXPECT_LOG(LogLevel::DBG, 4);
 
-    AiChatBusinessReq req;
-    fillHead(req, {kGtidIdx0, kGtidIdx1, kGtidIdx2});
-    req.content = "fanout";
+    auto req = makeChatReq({kGtidIdx0, kGtidIdx1, kGtidIdx2});
     sendToMe(std::move(req));
 
-    checkOutput<AiChatBusinessReq>(businessStubA_,
-                                   [](AiChatBusinessReq &msg)
-                                   {
-                                       EXPECT_EQ(msg.content, "fanout");
-                                       ASSERT_EQ(msg.head.busTaskIds.size(), 1u);
-                                       EXPECT_EQ(msg.head.busTaskIds.at(0), kGtidIdx0);
-                                   });
-    checkOutput<AiChatBusinessReq>(businessStubB_,
-                                   [](AiChatBusinessReq &msg)
-                                   {
-                                       EXPECT_EQ(msg.content, "fanout");
-                                       ASSERT_EQ(msg.head.busTaskIds.size(), 1u);
-                                       EXPECT_EQ(msg.head.busTaskIds.at(0), kGtidIdx1);
-                                   });
-    checkOutput<AiChatBusinessReq>(businessStubC_,
-                                   [](AiChatBusinessReq &msg)
-                                   {
-                                       EXPECT_EQ(msg.content, "fanout");
-                                       ASSERT_EQ(msg.head.busTaskIds.size(), 1u);
-                                       EXPECT_EQ(msg.head.busTaskIds.at(0), kGtidIdx2);
-                                   });
+    checkOutput<AiChatReq>(businessStubA_,
+                           [](AiChatReq &msg)
+                           {
+                               ASSERT_EQ(msg.head.busTaskIds.size(), 1u);
+                               EXPECT_EQ(msg.head.busTaskIds.at(0), kGtidIdx0);
+                           });
+    checkOutput<AiChatReq>(businessStubB_,
+                           [](AiChatReq &msg)
+                           {
+                               ASSERT_EQ(msg.head.busTaskIds.size(), 1u);
+                               EXPECT_EQ(msg.head.busTaskIds.at(0), kGtidIdx1);
+                           });
+    checkOutput<AiChatReq>(businessStubC_,
+                           [](AiChatReq &msg)
+                           {
+                               ASSERT_EQ(msg.head.busTaskIds.size(), 1u);
+                               EXPECT_EQ(msg.head.busTaskIds.at(0), kGtidIdx2);
+                           });
+}
+
+TEST_F(TestRouter, CheckHandleAiChatConfigReq_FanOut)
+{
+    EXPECT_LOG(LogLevel::INFO, 1);
+
+    RouterConfigReq cfg;
+    cfg.addresses.at(0) = stubAddress(businessStubA_);
+    cfg.addresses.at(1) = stubAddress(businessStubB_);
+    sendToMe(std::move(cfg));
+    checkOutput<RouterConfigResp>([](RouterConfigResp &msg) { EXPECT_TRUE(msg.success); });
+
+    EXPECT_LOG(LogLevel::DBG, 3);
+
+    AiChatConfigReq req;
+    fillHead(req, {kGtidIdx0, kGtidIdx1});
+    req.aiIndex = 0;
+    req.systemPrompt = "sys";
+    req.payload = R"({"apiUrl":"u","apiKey":"k","model":"m","temperature":0.5})";
+    sendToMe(std::move(req));
+
+    checkOutput<AiChatConfigReq>(businessStubA_,
+                                 [](AiChatConfigReq &msg)
+                                 {
+                                     ASSERT_EQ(msg.head.busTaskIds.size(), 1u);
+                                     EXPECT_EQ(msg.head.busTaskIds.at(0), kGtidIdx0);
+                                 });
+    checkOutput<AiChatConfigReq>(businessStubB_,
+                                 [](AiChatConfigReq &msg)
+                                 {
+                                     ASSERT_EQ(msg.head.busTaskIds.size(), 1u);
+                                     EXPECT_EQ(msg.head.busTaskIds.at(0), kGtidIdx1);
+                                 });
 }
 
 TEST_F(TestRouter, CheckRouteAndForward_EmptyBusTaskIds)

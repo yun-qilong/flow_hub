@@ -41,50 +41,49 @@ class TestSessionDispatcher : public fw::EoTestBase
     Stub router_;
 };
 
-TEST_F(TestSessionDispatcher, CheckHandleAiChatBusinessReq_DelegateToRouter)
+TEST_F(TestSessionDispatcher, CheckHandleAiChatReq_DelegateToRouter)
 {
     EXPECT_LOG(LogLevel::DBG, 1);
 
-    auto req = AiChatBusinessReq{};
+    auto req = AiChatReq{};
     fillDefaultHead(req);
-    req.content = "test";
+    req.messagesJson = "test";
     sendToMe(std::move(req));
 
-    checkOutput<AiChatBusinessReq>(router_,
-                                   [&](AiChatBusinessReq &msg) { EXPECT_EQ(msg.content, "test"); });
+    checkOutput<AiChatReq>(router_, [&](AiChatReq &msg) { EXPECT_EQ(msg.messagesJson, "test"); });
 }
 
-TEST_F(TestSessionDispatcher, CheckHandleAiChatBusinessReq_RouterNotSet)
+TEST_F(TestSessionDispatcher, CheckHandleAiChatReq_RouterNotSet)
 {
     restartWithoutRouter();
 
     EXPECT_LOG(LogLevel::DBG, 1);
     EXPECT_LOG(LogLevel::ERR, 1);
 
-    auto req = AiChatBusinessReq{};
+    auto req = AiChatReq{};
     fillDefaultHead(req);
-    req.content = "should_drop";
+    req.messagesJson = "should_drop";
     sendToMe(std::move(req));
 }
 
-TEST_F(TestSessionDispatcher, CheckHandleAiChatBusinessResp_DelegateToAccessGateway)
+TEST_F(TestSessionDispatcher, CheckHandleAiChatResp_DelegateToAccessGateway)
 {
     EXPECT_LOG(LogLevel::DBG, 1);
 
-    auto resp = AiChatBusinessResp{};
+    auto resp = AiChatResp{};
     fillDefaultHead(resp);
     resp.content = "response";
     sendToMe(std::move(resp));
 
-    checkOutput<AiChatBusinessResp>(accessGateway_,
-                                    [&](AiChatBusinessResp &msg)
-                                    {
-                                        EXPECT_EQ(msg.head.sessionTaskId, kDefaultGtid);
-                                        EXPECT_EQ(msg.content, "response");
-                                    });
+    checkOutput<AiChatResp>(accessGateway_,
+                            [&](AiChatResp &msg)
+                            {
+                                EXPECT_EQ(msg.head.sessionTaskId, kDefaultGtid);
+                                EXPECT_EQ(msg.content, "response");
+                            });
 }
 
-TEST_F(TestSessionDispatcher, CheckHandleAiChatBusinessResp_GatewayNotSet)
+TEST_F(TestSessionDispatcher, CheckHandleAiChatResp_GatewayNotSet)
 {
     stopActor(testee_);
     testee_ = spawn<DPlane::session::SessionDispatcher>(fw::EoAddress{});
@@ -92,7 +91,7 @@ TEST_F(TestSessionDispatcher, CheckHandleAiChatBusinessResp_GatewayNotSet)
     EXPECT_LOG(LogLevel::DBG, 1);
     EXPECT_LOG(LogLevel::ERR, 1);
 
-    auto resp = AiChatBusinessResp{};
+    auto resp = AiChatResp{};
     fillDefaultHead(resp);
     resp.content = "should_drop";
     sendToMe(std::move(resp));

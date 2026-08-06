@@ -68,8 +68,8 @@ void buildSystem(fw::EoEnv &env, TaskPool &pool, const ApiConfig &cfg,
 
     auto businessMgr = env.createEo<CPlane::BusinessMgr>(sessionMgr);
     auto router = env.createEo<DPlane::business::Router>(businessMgr, sessionDispatcher);
-    auto aiChatBus = env.createEo<DPlane::business::AiChatBus<TaskType::AiAgora>>(
-        pool, sessionDispatcher, businessMgr, router, cfg.model);
+    auto aiChatBus = env.createEo<DPlane::business::AiChatBus<TaskType::AiChat>>(
+        pool, sessionDispatcher, businessMgr, router);
 
     auto serviceMgr = env.createEo<DPlane::service::ServiceMgr>(businessMgr);
     auto serviceGateway = env.createEo<DPlane::service::ServiceGateway>(serviceMgr, aiChatBus);

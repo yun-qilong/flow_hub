@@ -59,7 +59,7 @@
 | 常量 | 值 | 说明 |
 |------|------|------|
 | `kInvalidGtid` | `0x0000` | 无效 GTID |
-| `kJudgeIndex` | `0xFF` | 裁判 AI 身份编号 |
+| `kJudgeIndex` | `0xFE` | 裁判 AI 身份编号 |
 | `kMaxDebateAICount` | `8` | 最大参辩 AI 数 |
 | `kTopicBaseJsonSize` | `10485760` | topicBaseJson 大小（10MB） |
 | `kSystemPromptSize` | `4096` | systemPrompt 大小 |

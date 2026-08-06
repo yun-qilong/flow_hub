@@ -3,8 +3,8 @@
 namespace DPlane::session
 {
 
-using AiChatBusinessReq = common::message::AiChatBusinessReq;
-using AiChatBusinessResp = common::message::AiChatBusinessResp;
+using AiChatReq = common::message::AiChatReq;
+using AiChatResp = common::message::AiChatResp;
 
 SessionDispatcher::SessionDispatcher(fw::EoConfig &cfg, fw::EoAddress accessGatewayAddr)
     : fw::EoBase<SessionDispatcher>(cfg), accessGatewayAddr_(std::move(accessGatewayAddr))
@@ -20,10 +20,9 @@ void SessionDispatcher::handle(const common::message::TempConfig &msg)
     }
 }
 
-void SessionDispatcher::handle(AiChatBusinessReq req)
+void SessionDispatcher::handle(AiChatReq req)
 {
-    LG_DBG("received AiChatBusinessReq: sessionTaskId=0x%x contentSize=%zuB",
-           req.head.sessionTaskId, req.content.size());
+    LG_DBG("received AiChatReq: sessionTaskId=0x%x", req.head.sessionTaskId);
 
     if (not routerAddr_)
     {
@@ -34,14 +33,13 @@ void SessionDispatcher::handle(AiChatBusinessReq req)
     delegateTo(routerAddr_, std::move(req));
 }
 
-void SessionDispatcher::handle(AiChatBusinessResp resp)
+void SessionDispatcher::handle(AiChatResp resp)
 {
-    LG_DBG("received AiChatBusinessResp: sessionTaskId=0x%x contentSize=%zuB",
-           resp.head.sessionTaskId, resp.content.size());
+    LG_DBG("received AiChatResp: sessionTaskId=0x%x", resp.head.sessionTaskId);
 
     if (not accessGatewayAddr_)
     {
-        LG_ERR("accessGatewayAddr not set, dropping AiChatBusinessResp");
+        LG_ERR("accessGatewayAddr not set, dropping AiChatResp");
         return;
     }
 

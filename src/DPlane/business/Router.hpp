@@ -15,7 +15,8 @@ class Router : public fw::EoBase<Router>
 
     void handle(const common::message::RouterConfigReq &req);
     void handle(const common::message::RouterReconfigReq &req);
-    void handle(common::message::AiChatBusinessReq req);
+    void handle(common::message::AiChatConfigReq req);
+    void handle(common::message::AiChatReq req);
     void handle(common::message::AiChatServiceResp resp);
     void handle(const common::message::TempConfig &msg);
 
@@ -25,7 +26,8 @@ class Router : public fw::EoBase<Router>
         onMsg<common::message::TempConfig>();
         onMsg<common::message::RouterConfigReq>();
         onMsg<common::message::RouterReconfigReq>();
-        onMsg<common::message::AiChatBusinessReq>();
+        onMsg<common::message::AiChatConfigReq>();
+        onMsg<common::message::AiChatReq>();
         onMsg<common::message::AiChatServiceResp>();
     }
 

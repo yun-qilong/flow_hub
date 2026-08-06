@@ -4,6 +4,9 @@
 #include "generated/TaskType.hpp"
 #include "generated/TaskTypeTraits.hpp"
 
+#include <array>
+#include <string>
+
 namespace common
 {
 class TaskPool;
@@ -11,8 +14,12 @@ class TaskPool;
 
 namespace common::message
 {
+struct AiChatConfigReq;
+struct AiChatReq;
 struct AiChatServiceReq;
-}
+struct AiChatServiceResp;
+struct UserHead;
+} // namespace common::message
 
 namespace DPlane::business
 {
@@ -25,9 +32,10 @@ class AiChatBus : public fw::EoBase<AiChatBus<T>>
 
     explicit AiChatBus(fw::EoConfig &cfg, common::TaskPool &pool,
                        fw::EoAddress sessionDispatcherAddr, fw::EoAddress businessMgrAddr,
-                       fw::EoAddress routerAddr, std::string defaultModelName = "default");
+                       fw::EoAddress routerAddr);
 
-    void handle(const common::message::AiChatBusinessReq &req);
+    void handle(const common::message::AiChatConfigReq &req);
+    void handle(const common::message::AiChatReq &req);
     void handle(const common::message::AiChatServiceResp &resp);
     void handle(const common::message::TempConfig &msg);
 
@@ -35,28 +43,33 @@ class AiChatBus : public fw::EoBase<AiChatBus<T>>
     void init() override
     {
         this->template onMsg<common::message::TempConfig>();
-        this->template onMsg<common::message::AiChatBusinessReq>();
+        this->template onMsg<common::message::AiChatConfigReq>();
+        this->template onMsg<common::message::AiChatReq>();
         this->template onMsg<common::message::AiChatServiceResp>();
     }
 
   private:
-    void processServiceRequest(ContextType &ctx, const common::message::AiChatBusinessReq &req,
-                               uint16_t gtid);
-    void processBusinessResp(ContextType &ctx, const common::message::AiChatServiceResp &resp);
-    std::string buildMessagesJson(const ContextType &ctx, const std::string &content) const;
-    void writeMessagesToContext(ContextType &ctx, const std::string &body);
-    uint16_t allocateAndRecordSeq(ContextType &ctx);
-    common::message::AiChatServiceReq
-    buildAiChatServiceReq(const common::message::UserHead &reqHead, uint16_t gtid,
-                          std::string messagesJson, const ContextType &ctx, uint16_t reqSeq);
-    void appendAssistantMsg(ContextType &ctx, const std::string &content);
+    bool isValidAiIndex(uint8_t aiIndex) const;
+    bool applyConfig(ContextType &ctx, const common::message::AiChatConfigReq &req);
+    void sendConfigResp(const common::message::UserHead &head, bool isSuccess);
+    void sendChatResp(const common::message::UserHead &head, bool success,
+                      const std::string &content, uint8_t aiIndex);
+    void sendChatToService(const ContextType &ctx, const std::string &messagesJson,
+                           const common::message::UserHead &head);
+    common::GTID firstBusTaskId(const common::message::UserHead &head) const;
+    common::message::AiChatServiceReq buildServiceReq(const common::message::UserHead &head,
+                                                      const std::string &messagesJson,
+                                                      const ContextType &ctx) const;
+    template <size_t N>
+    std::string readCString(const std::array<uint8_t, N> &data) const;
+    template <size_t N>
+    bool writeCString(std::array<uint8_t, N> &data, const std::string &value);
 
     common::TaskPool &pool_;
     fw::EoAddress sessionDispatcherAddr_;
     fw::EoAddress businessMgrAddr_;
     fw::EoAddress routerAddr_;
     fw::EoAddress serviceGatewayAddr_;
-    std::string defaultModelName_;
 };
 
 } // namespace DPlane::business

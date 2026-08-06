@@ -5,5 +5,5 @@ flowhub_add_ut(TestAccessGateway
 
 flowhub_add_ut(TestCliAdapter
     SOURCES TestCliAdapter.cpp ../CliAdapter.cpp
-    EXTRA_LIBS GTest::gmock_main
+    EXTRA_LIBS GTest::gmock_main nlohmann_json::nlohmann_json
 )

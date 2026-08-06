@@ -17,6 +17,14 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(caf)
 
+# ---- 依赖：nlohmann/json（JSON 编解码）----------------------------
+FetchContent_Declare(
+    nlohmann_json
+    GIT_REPOSITORY https://github.com/nlohmann/json.git
+    GIT_TAG        v3.11.3
+)
+FetchContent_MakeAvailable(nlohmann_json)
+
 # ---- 依赖：GTest（仅当启用测试时）-------------------------------
 if(FLOWHUB_BUILD_TESTS)
     enable_testing()

@@ -31,7 +31,7 @@ class TestAccessGateway : public fw::EoTestBase
 
     void sendBusinessResp(common::GTID sessionTaskId)
     {
-        auto resp = AiChatBusinessResp{};
+        auto resp = AiChatResp{};
         fillDefaultHead(resp);
         resp.head.sessionTaskId = sessionTaskId;
         resp.content = "reply";
@@ -74,9 +74,9 @@ TEST_F(TestAccessGateway, CheckHandleTempConfig_Tag1SetsSessionMgr)
 
 TEST_F(TestAccessGateway, CheckHandleTempConfig_Tag2SetsSessionDispatcher)
 {
-    auto req = AiChatBusinessReq{};
+    auto req = AiChatReq{};
     sendToMe(std::move(req));
-    checkOutput<AiChatBusinessReq>(sessionDispatcher_, [](AiChatBusinessReq &) {});
+    checkOutput<AiChatReq>(sessionDispatcher_, [](AiChatReq &) {});
 }
 
 TEST_F(TestAccessGateway, CheckHandleTempConfig_UnknownTagNoOp)
@@ -106,13 +106,13 @@ TEST_F(TestAccessGateway, CheckHandleTaskDeleteReq_ForwardsToSessionMgr)
     checkOutput<TaskDeleteReq>(sessionMgr_, [](TaskDeleteReq &) {});
 }
 
-TEST_F(TestAccessGateway, CheckHandleAiChatBusinessReq_ForwardsToSessionDispatcher)
+TEST_F(TestAccessGateway, CheckHandleAiChatReq_ForwardsToSessionDispatcher)
 {
-    auto req = AiChatBusinessReq{};
-    req.content = "hello";
+    auto req = AiChatReq{};
+    req.messagesJson = "hello";
     sendToMe(std::move(req));
-    checkOutput<AiChatBusinessReq>(sessionDispatcher_,
-                                   [](AiChatBusinessReq &msg) { EXPECT_EQ(msg.content, "hello"); });
+    checkOutput<AiChatReq>(sessionDispatcher_,
+                           [](AiChatReq &msg) { EXPECT_EQ(msg.messagesJson, "hello"); });
 }
 
 TEST_F(TestAccessGateway, CheckHandleTaskCreateResp_SuccessWritesMappingAndRoutes)
@@ -122,8 +122,7 @@ TEST_F(TestAccessGateway, CheckHandleTaskCreateResp_SuccessWritesMappingAndRoute
     writeMapping(kGtid);
 
     sendBusinessResp(kGtid);
-    checkOutput<AiChatBusinessResp>(cliAdapter_, [](AiChatBusinessResp &msg)
-                                    { EXPECT_EQ(msg.content, "reply"); });
+    checkOutput<AiChatResp>(cliAdapter_, [](AiChatResp &msg) { EXPECT_EQ(msg.content, "reply"); });
 }
 
 TEST_F(TestAccessGateway, CheckHandleTaskCreateResp_FailureNoMapping)
@@ -143,7 +142,7 @@ TEST_F(TestAccessGateway, CheckHandleTaskCreateResp_FailureNoMapping)
     sendBusinessResp(kGtid);
 }
 
-TEST_F(TestAccessGateway, CheckHandleAiChatBusinessResp_NoMappingDrops)
+TEST_F(TestAccessGateway, CheckHandleAiChatResp_NoMappingDrops)
 {
     EXPECT_LOG(LogLevel::ERR, 1);
 
@@ -176,7 +175,7 @@ TEST_F(TestAccessGateway, CheckMapping_SameGtidOverwritesToNewAdapter)
     writeMappingTo(0x7123, adapterB);
 
     sendBusinessResp(0x7123);
-    checkOutput<AiChatBusinessResp>(adapterB, [](AiChatBusinessResp &) {});
+    checkOutput<AiChatResp>(adapterB, [](AiChatResp &) {});
 }
 
 TEST_F(TestAccessGateway, CheckMapping_IndexBoundaryLow)
@@ -184,7 +183,7 @@ TEST_F(TestAccessGateway, CheckMapping_IndexBoundaryLow)
     writeMapping(0x0000);
 
     sendBusinessResp(0x0000);
-    checkOutput<AiChatBusinessResp>(cliAdapter_, [](AiChatBusinessResp &) {});
+    checkOutput<AiChatResp>(cliAdapter_, [](AiChatResp &) {});
 }
 
 TEST_F(TestAccessGateway, CheckMapping_IndexBoundaryHigh)
@@ -192,7 +191,7 @@ TEST_F(TestAccessGateway, CheckMapping_IndexBoundaryHigh)
     writeMapping(0x0FFF);
 
     sendBusinessResp(0x0FFF);
-    checkOutput<AiChatBusinessResp>(cliAdapter_, [](AiChatBusinessResp &) {});
+    checkOutput<AiChatResp>(cliAdapter_, [](AiChatResp &) {});
 }
 
 TEST_F(TestAccessGateway, CheckMapping_HighBitsMaskedToSameSlot)
