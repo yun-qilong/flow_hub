@@ -637,6 +637,10 @@ def field_includes(fields: list, known_types: dict[str, str] | None = None) -> l
                 a = a.strip()
                 if a in CONSTANT_VALUES:
                     needs_constants = True
+                elif a not in DEFINE_NAMES:
+                    targ_entry = resolve_type_entry(a)
+                    if targ_entry and targ_entry[1]:
+                        incs.add(targ_entry[1])
     result = sorted(incs) + sorted(caf_incs)
     if needs_constants:
         result.append('"common/Constants.hpp"')

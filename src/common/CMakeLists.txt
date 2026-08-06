@@ -3,3 +3,7 @@ add_library(commonLib STATIC
 )
 target_include_directories(commonLib PUBLIC ${CMAKE_SOURCE_DIR}/src)
 target_link_libraries(commonLib PUBLIC CAF::core)
+
+if(FLOWHUB_BUILD_TESTS)
+    add_subdirectory(ut)
+endif()

@@ -31,8 +31,7 @@
 |--------|-----|----------|------|
 | `Service` | `(0x0<<6)\|0` | System | 系统运维（不动） |
 | `AiAgora` | `(0x7<<6)\|0` | Session | 用户 AI 讨论（was `AiChat`） |
-| `AiChat` | `(0x9<<6)\|0` | Bus | 参辩 AI 子对话 |
-| `AiJudge` | `(0x9<<6)\|1` | Bus | 裁判 AI 裁决 |
+| `AiChat` | `(0x9<<6)\|0` | Bus | AI 子对话（参辩/裁判共用，`AiIndex` 区分身份） |
 
 
 所有值由 `gen_code.py` 从 context 目录名（Category）和文件名（subType 序号）自动计算。
@@ -57,8 +56,7 @@
 | 操作 | 旧 | 新 |
 |------|-----|-----|
 | 移动 | `userContext/AiChatContext.mt` | `sessionContext/AiAgoraContext.mt` |
-| 新建 | — | `busContext/AiChatContext.mt`（占位） |
-| 新建 | — | `busContext/AiJudgeContext.mt`（占位） |
+| 新建 | — | `busContext/AiChatContext.mt`（占位，参辩/裁判共用） |
 | 删除 | `otherContext/SessionContext.mt` | — |
 
 **类型 .mt**：`AppType::AiChat` → `AiAgora`，`AccessType::AiChatCLI` → `AiAgoraCLI`。
