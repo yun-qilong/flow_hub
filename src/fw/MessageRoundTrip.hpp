@@ -8,9 +8,6 @@
 namespace fw
 {
 
-// 消息序列化 round-trip 验证：serialize → deserialize → serialize，
-// 断言两次序列化字节一致。用于检测 CAF inspect 缺失 / 字段映射错误。
-// 需要 actor_system 上下文（EoAddress 字段序列化依赖 system registry）。
 template <typename M>
 bool roundTripSerialize(caf::actor_system &sys, const M &src)
 {

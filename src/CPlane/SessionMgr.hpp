@@ -1,8 +1,3 @@
-// src/CPlane/SessionMgr.hpp
-// Data-plane session layer — Session Manager (GTID lifecycle)
-//
-// 负责 GTID 的分配与回收，作为会话生命周期的管控入口。
-
 #pragma once
 
 #include "common/Constants.hpp"
@@ -10,6 +5,7 @@
 #include "generated/Types.hpp"
 
 #include <cstdint>
+#include <vector>
 
 namespace common
 {
@@ -24,6 +20,10 @@ using TaskCreateReq = common::message::TaskCreateReq;
 using TaskCreateResp = common::message::TaskCreateResp;
 using TaskDeleteReq = common::message::TaskDeleteReq;
 using TaskDeleteResp = common::message::TaskDeleteResp;
+using BusTaskCreateReq = common::message::BusTaskCreateReq;
+using BusTaskCreateResp = common::message::BusTaskCreateResp;
+using BusTaskDeleteReq = common::message::BusTaskDeleteReq;
+using BusTaskDeleteResp = common::message::BusTaskDeleteResp;
 
 class SessionMgr : public fw::EoBase<SessionMgr>
 {
@@ -32,6 +32,8 @@ class SessionMgr : public fw::EoBase<SessionMgr>
 
     void handle(const TaskCreateReq &req);
     void handle(const TaskDeleteReq &req);
+    void handle(const BusTaskCreateReq &req);
+    void handle(const BusTaskDeleteReq &req);
     void handle(const TempConfig &msg);
 
   protected:
@@ -40,11 +42,17 @@ class SessionMgr : public fw::EoBase<SessionMgr>
         onMsg<TempConfig>();
         onMsg<TaskCreateReq>();
         onMsg<TaskDeleteReq>();
+        onMsg<BusTaskCreateReq>();
+        onMsg<BusTaskDeleteReq>();
     }
 
   private:
     void processCreateTask(common::TaskType taskType, TaskCreateResp &resp);
     void processDeleteTask(common::GTID gtid, TaskDeleteResp &resp);
+    void processCreateBusTasks(const std::vector<common::TaskType> &taskTypes,
+                               BusTaskCreateResp &resp);
+    void processDeleteBusTasks(const std::vector<common::GTID> &gtids, BusTaskDeleteResp &resp);
+    void recycleBusTasks(const std::vector<common::GTID> &gtids);
 
     common::TaskPool &pool_;
     fw::EoAddress accessGatewayAddr_;

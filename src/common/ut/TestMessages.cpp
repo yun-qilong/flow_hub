@@ -1,5 +1,5 @@
-#include "fw/MessageRoundTrip.hpp"
 #include "fw/EoTestBase.hpp"
+#include "fw/MessageRoundTrip.hpp"
 #include "generated/message/Messages.hpp"
 
 #include <gtest/gtest.h>
