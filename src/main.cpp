@@ -64,7 +64,7 @@ void buildSystem(fw::EoEnv &env, TaskPool &pool, const ApiConfig &cfg,
 
     auto sessionDispatcher = env.createEo<DPlane::session::SessionDispatcher>(accessGateway);
     auto sessionMgr = env.createEo<CPlane::SessionMgr>(pool, accessGateway);
-    env.createEo<DPlane::session::AiAgora>();
+    env.createEo<DPlane::session::AiAgora>(sessionDispatcher);
 
     auto businessMgr = env.createEo<CPlane::BusinessMgr>(sessionMgr);
     auto router = env.createEo<DPlane::business::Router>(businessMgr, sessionDispatcher);

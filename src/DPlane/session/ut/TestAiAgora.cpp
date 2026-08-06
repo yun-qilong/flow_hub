@@ -13,8 +13,15 @@ class TestAiAgora : public fw::EoTestBase
   protected:
     void SetUp() override
     {
-        testee_ = spawn<DPlane::session::AiAgora>();
+        sessionDispatcher_ = makeStub();
+        trackStub(sessionDispatcher_);
+
+        testee_ = spawn<DPlane::session::AiAgora>(stubAddress(sessionDispatcher_));
+
+        checkOutput<TempConfig>(sessionDispatcher_, [](TempConfig &msg) { EXPECT_EQ(msg.tag, 7); });
     }
+
+    Stub sessionDispatcher_;
 };
 
 TEST_F(TestAiAgora, CheckHandleTempConfig_NoOp)

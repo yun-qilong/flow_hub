@@ -1,15 +1,16 @@
 #include "DPlane/session/SessionDispatcher.hpp"
 
+#include <utility>
+
 namespace DPlane::session
 {
 
 using AiChatReq = common::message::AiChatReq;
-using AiChatResp = common::message::AiChatResp;
 
 SessionDispatcher::SessionDispatcher(fw::EoConfig &cfg, fw::EoAddress accessGatewayAddr)
-    : fw::EoBase<SessionDispatcher>(cfg), accessGatewayAddr_(std::move(accessGatewayAddr))
+    : fw::EoBase<SessionDispatcher>(cfg)
 {
-    sendTo(accessGatewayAddr_, common::message::TempConfig{2});
+    sendTo(std::move(accessGatewayAddr), common::message::TempConfig{2});
 }
 
 void SessionDispatcher::handle(const common::message::TempConfig &msg)
@@ -18,11 +19,19 @@ void SessionDispatcher::handle(const common::message::TempConfig &msg)
     {
         routerAddr_ = senderAddress();
     }
+    else if (msg.tag == 7)
+    {
+        orchestratorTable_.at(static_cast<size_t>(common::TaskType::AiAgora)) = senderAddress();
+    }
+    else
+    {
+        LG_WRN("unknown TempConfig tag=%u", static_cast<unsigned>(msg.tag));
+    }
 }
 
 void SessionDispatcher::handle(AiChatReq req)
 {
-    LG_DBG("received AiChatReq: sessionTaskId=0x%x", req.head.sessionTaskId);
+    LG_DBG("received AiChatReq: sessionTaskId=0x%x", static_cast<unsigned>(req.head.sessionTaskId));
 
     if (not routerAddr_)
     {
@@ -31,19 +40,6 @@ void SessionDispatcher::handle(AiChatReq req)
     }
 
     delegateTo(routerAddr_, std::move(req));
-}
-
-void SessionDispatcher::handle(AiChatResp resp)
-{
-    LG_DBG("received AiChatResp: sessionTaskId=0x%x", resp.head.sessionTaskId);
-
-    if (not accessGatewayAddr_)
-    {
-        LG_ERR("accessGatewayAddr not set, dropping AiChatResp");
-        return;
-    }
-
-    delegateTo(accessGatewayAddr_, std::move(resp));
 }
 
 } // namespace DPlane::session
