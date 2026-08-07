@@ -628,8 +628,8 @@ TEST_F(TestCliAdapter, DispatchInput_HasGtid_ResetSendsResetReq)
 
     cli_->dispatchInput("/reset");
 
-    checkOutput<AiAgoraResetReq>(
-        [](AiAgoraResetReq &msg) { EXPECT_EQ(msg.head.sessionTaskId, 0x1234); });
+    checkOutput<AiAgoraResetReq>([](AiAgoraResetReq &msg)
+                                 { EXPECT_EQ(msg.head.sessionTaskId, 0x1234); });
     EXPECT_TRUE(isWaiting());
 }
 
@@ -640,8 +640,8 @@ TEST_F(TestCliAdapter, DispatchInput_HasGtid_WaitingResetStillSends)
 
     cli_->dispatchInput("/reset");
 
-    checkOutput<AiAgoraResetReq>(
-        [](AiAgoraResetReq &msg) { EXPECT_EQ(msg.head.sessionTaskId, 0x1234); });
+    checkOutput<AiAgoraResetReq>([](AiAgoraResetReq &msg)
+                                 { EXPECT_EQ(msg.head.sessionTaskId, 0x1234); });
     EXPECT_TRUE(isWaiting());
 }
 

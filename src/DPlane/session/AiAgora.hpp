@@ -52,6 +52,7 @@ class AiAgora : public fw::EoBase<AiAgora>
     void handle(const common::message::AiAgoraChatReq &req);
     void handle(const common::message::AiChatResp &resp);
     void handle(const common::message::AiAgoraResetReq &req);
+    void handle(const common::message::TaskDeleteReq &req);
 
   protected:
     void init() override
@@ -62,6 +63,7 @@ class AiAgora : public fw::EoBase<AiAgora>
         onMsg<common::message::AiAgoraChatReq>();
         onMsg<common::message::AiChatResp>();
         onMsg<common::message::AiAgoraResetReq>();
+        onMsg<common::message::TaskDeleteReq>();
     }
 
   private:
@@ -92,7 +94,8 @@ class AiAgora : public fw::EoBase<AiAgora>
     void completeConfig(const common::message::UserHead &head, ContextType &ctx);
     static void applyBusTaskIds(ContextType &ctx, const ParsedTaskConfig &cfg,
                                 const std::vector<common::GTID> &busTaskIds);
-    void recycleBusTasks(const common::message::UserHead &head, ContextType &ctx);
+    static std::vector<common::GTID> collectBusTaskIds(ContextType &ctx);
+    void finishDelete(const common::message::TaskDeleteReq &req);
     static void clearPendingBit(ContextType &ctx, uint8_t aiIndex);
     void processChatRequest(ContextType &ctx, const common::message::AiAgoraChatReq &req);
     void sendAiChatRequest(ContextType &ctx, const common::message::AiAgoraChatReq &req);

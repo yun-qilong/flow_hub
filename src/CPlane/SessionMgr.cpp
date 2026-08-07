@@ -50,27 +50,13 @@ void SessionMgr::processCreateTask(common::TaskType taskType, TaskCreateResp &re
 void SessionMgr::handle(const TaskDeleteReq &req)
 {
     auto gtid = req.head.sessionTaskId;
-    LG_INFO("[SessionMgr] TaskDeleteReq: gtid=0x%x", gtid);
-
-    TaskDeleteResp resp;
-    resp.head = req.head;
-    processDeleteTask(gtid, resp);
-}
-
-void SessionMgr::processDeleteTask(common::GTID gtid, TaskDeleteResp &resp)
-{
     if (gtid == common::kInvalidGtid)
     {
         LG_ERR("[SessionMgr] TaskDelete failed: invalid gtid");
-        resp.isSuccess = false;
-        sendTo(accessGatewayAddr_, std::move(resp));
         return;
     }
-
     pool_.deallocate(gtid);
-    resp.isSuccess = true;
     LG_INFO("[SessionMgr] TaskDelete success: gtid=0x%x", gtid);
-    sendTo(accessGatewayAddr_, std::move(resp));
 }
 
 void SessionMgr::handle(const BusTaskCreateReq &req)

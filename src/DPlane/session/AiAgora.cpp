@@ -17,6 +17,8 @@ using AiAgoraChatReq = common::message::AiAgoraChatReq;
 using AiAgoraChatResp = common::message::AiAgoraChatResp;
 using AiAgoraResetReq = common::message::AiAgoraResetReq;
 using AiAgoraResetResp = common::message::AiAgoraResetResp;
+using TaskDeleteReq = common::message::TaskDeleteReq;
+using TaskDeleteResp = common::message::TaskDeleteResp;
 using AiChatReq = common::message::AiChatReq;
 using AiChatResp = common::message::AiChatResp;
 using TaskConfigReq = common::message::TaskConfigReq;
@@ -24,6 +26,7 @@ using TaskConfigResp = common::message::TaskConfigResp;
 using BusTaskCreateReq = common::message::BusTaskCreateReq;
 using BusTaskCreateResp = common::message::BusTaskCreateResp;
 using BusTaskDeleteReq = common::message::BusTaskDeleteReq;
+using BusTaskDeleteResp = common::message::BusTaskDeleteResp;
 using AiChatConfigReq = common::message::AiChatConfigReq;
 using AiChatConfigResp = common::message::AiChatConfigResp;
 using TempConfig = common::message::TempConfig;
@@ -279,7 +282,7 @@ void AiAgora::applyBusTaskIds(AiAgoraContext &ctx, const ParsedTaskConfig &cfg,
     }
 }
 
-void AiAgora::recycleBusTasks(const UserHead &head, AiAgoraContext &ctx)
+std::vector<common::GTID> AiAgora::collectBusTaskIds(AiAgoraContext &ctx)
 {
     std::vector<common::GTID> gtids;
     gtids.reserve(9);
@@ -290,9 +293,7 @@ void AiAgora::recycleBusTasks(const UserHead &head, AiAgoraContext &ctx)
     }
     gtids.push_back(ctx.judgeTaskId);
     ctx.judgeTaskId = common::kInvalidGtid;
-    auto reqHead = head;
-    reqHead.busTaskIds = std::move(gtids);
-    sendTo(sessionMgrAddr_, BusTaskDeleteReq{reqHead});
+    return gtids;
 }
 
 void AiAgora::sendAiChatConfigs(const UserHead &head, AiAgoraContext &ctx,
@@ -327,9 +328,13 @@ void AiAgora::onAiChatConfigResp(AiAgoraContext &ctx, const AiChatConfigResp &re
     if (not resp.isSuccess)
     {
         LG_WRN("AiAgora: aiChat config failed for session 0x%x", resp.head.sessionTaskId);
-        recycleBusTasks(resp.head, ctx);
         ctx.state = kStateUnconfigured;
-        sendTo(accessGatewayAddr_, TaskConfigResp{resp.head, false, 0});
+        auto reqHead = resp.head;
+        reqHead.busTaskIds = collectBusTaskIds(ctx);
+        requestThen(
+            sessionMgrAddr_, std::chrono::milliseconds(ctx.timeoutMs), BusTaskDeleteReq{reqHead},
+            [this, head = resp.head](BusTaskDeleteResp &) { failConfig(head); },
+            [this, head = resp.head](const caf::error &) { failConfig(head); });
         return;
     }
     clearPendingBit(ctx, resp.aiIndex);
@@ -505,6 +510,33 @@ void AiAgora::handle(const AiAgoraResetReq &req)
                 LG_WRN("AiAgora: no session context for 0x%x", req.head.sessionTaskId);
                 sendTo(accessGatewayAddr_, AiAgoraResetResp{req.head, false, 0});
             });
+}
+
+void AiAgora::handle(const TaskDeleteReq &req)
+{
+    pool_.getContext<AiAgoraContext>(req.head.sessionTaskId)
+        .useOrFailed(
+            [&](AiAgoraContext &ctx)
+            {
+                auto reqHead = req.head;
+                reqHead.busTaskIds = collectBusTaskIds(ctx);
+                requestThen(
+                    sessionMgrAddr_, std::chrono::milliseconds(ctx.timeoutMs),
+                    BusTaskDeleteReq{reqHead},
+                    [this, req](BusTaskDeleteResp &) { finishDelete(req); },
+                    [this, req](const caf::error &) { finishDelete(req); });
+            },
+            [&]()
+            {
+                LG_WRN("AiAgora: no session context for 0x%x", req.head.sessionTaskId);
+                finishDelete(req);
+            });
+}
+
+void AiAgora::finishDelete(const TaskDeleteReq &req)
+{
+    sendTo(sessionMgrAddr_, TaskDeleteReq{req});
+    sendTo(accessGatewayAddr_, TaskDeleteResp{req.head, true});
 }
 
 void AiAgora::resetContext(AiAgoraContext &ctx)

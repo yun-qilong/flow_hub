@@ -40,7 +40,7 @@ void AccessGateway::handle(TaskCreateResp resp)
 
 void AccessGateway::handle(const TaskDeleteReq &req)
 {
-    delegateTo(sessionMgrAddr_, TaskDeleteReq{req});
+    delegateTo(sessionDispatcherAddr_, TaskDeleteReq{req});
 }
 
 void AccessGateway::handle(TaskDeleteResp resp)

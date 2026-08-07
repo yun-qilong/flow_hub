@@ -62,23 +62,6 @@ TEST_F(TestMessages, RoundTrip_AiAgoraResetResp)
     assertRoundTrip(msg);
 }
 
-TEST_F(TestMessages, RoundTrip_AiChatBusinessReq)
-{
-    AiChatBusinessReq msg;
-    fillDefaultHead(msg.head);
-    msg.content = "legacy content";
-    assertRoundTrip(msg);
-}
-
-TEST_F(TestMessages, RoundTrip_AiChatBusinessResp)
-{
-    AiChatBusinessResp msg;
-    fillDefaultHead(msg.head);
-    msg.success = true;
-    msg.content = "legacy answer";
-    assertRoundTrip(msg);
-}
-
 TEST_F(TestMessages, RoundTrip_AiChatConfigReq)
 {
     AiChatConfigReq msg;

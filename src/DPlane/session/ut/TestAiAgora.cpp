@@ -217,18 +217,24 @@ TEST_F(TestAiAgora, CheckHandleAiChatConfigResp_Failure)
     EXPECT_LOG(LogLevel::WRN, 1);
     replyAiChatConfig(sessionTaskId, 0, false);
 
-    checkOutput<BusTaskDeleteReq>(sessionMgr_,
-                                  [&](BusTaskDeleteReq &req)
-                                  {
-                                      EXPECT_EQ(req.head.sessionTaskId, sessionTaskId);
-                                      ASSERT_EQ(req.head.busTaskIds.size(), 9U);
-                                      EXPECT_EQ(req.head.busTaskIds.at(0), kBusTaskId);
-                                      for (size_t i = 1; i < req.head.busTaskIds.size(); ++i)
-                                      {
-                                          EXPECT_EQ(req.head.busTaskIds.at(i),
-                                                    common::kInvalidGtid);
-                                      }
-                                  });
+    checkOutputAndReply<BusTaskDeleteReq, BusTaskDeleteResp>(
+        sessionMgr_,
+        [&](BusTaskDeleteReq &req)
+        {
+            EXPECT_EQ(req.head.sessionTaskId, sessionTaskId);
+            ASSERT_EQ(req.head.busTaskIds.size(), 9U);
+            EXPECT_EQ(req.head.busTaskIds.at(0), kBusTaskId);
+            for (size_t i = 1; i < req.head.busTaskIds.size(); ++i)
+            {
+                EXPECT_EQ(req.head.busTaskIds.at(i), common::kInvalidGtid);
+            }
+        },
+        [&]()
+        {
+            auto head = UserHead{};
+            head.sessionTaskId = sessionTaskId;
+            return BusTaskDeleteResp{head, true};
+        }());
 
     checkOutput<TaskConfigResp>(accessGateway_,
                                 [&](TaskConfigResp &resp)
@@ -538,9 +544,8 @@ TEST_F(TestAiAgora, CheckHandleAiAgoraResetReq_Configuring)
     ASSERT_NE(sessionTaskId, common::kInvalidGtid);
 
     pool_.getContext<common::context::AiAgoraContext>(sessionTaskId)
-        .useOrFailed(
-            [](common::context::AiAgoraContext &ctx) { ctx.state = kConfiguringState; },
-            []() { FAIL() << "context missing"; });
+        .useOrFailed([](common::context::AiAgoraContext &ctx) { ctx.state = kConfiguringState; },
+                     []() { FAIL() << "context missing"; });
 
     sendToMe(AiAgoraResetReq{UserHead{sessionTaskId, {}}});
 
@@ -550,6 +555,51 @@ TEST_F(TestAiAgora, CheckHandleAiAgoraResetReq_Configuring)
                                       EXPECT_EQ(resp.head.sessionTaskId, sessionTaskId);
                                       EXPECT_FALSE(resp.isSuccess);
                                   });
+}
+
+TEST_F(TestAiAgora, CheckHandleTaskDeleteReq_Cascade)
+{
+    auto sessionTaskId = allocateSession();
+    ASSERT_NE(sessionTaskId, common::kInvalidGtid);
+    runSuccessFlow(sessionTaskId);
+
+    sendToMe(TaskDeleteReq{UserHead{sessionTaskId, {}}});
+
+    checkOutputAndReply<BusTaskDeleteReq, BusTaskDeleteResp>(
+        sessionMgr_,
+        [&](BusTaskDeleteReq &req)
+        {
+            ASSERT_EQ(req.head.busTaskIds.size(), 9u);
+            EXPECT_EQ(req.head.busTaskIds.at(0), kBusTaskId);
+        },
+        [&]()
+        {
+            auto head = UserHead{};
+            head.sessionTaskId = sessionTaskId;
+            return BusTaskDeleteResp{head, true};
+        }());
+    checkOutput<TaskDeleteReq>(sessionMgr_, [&](TaskDeleteReq &req)
+                               { EXPECT_EQ(req.head.sessionTaskId, sessionTaskId); });
+    checkOutput<TaskDeleteResp>(accessGateway_,
+                                [&](TaskDeleteResp &resp)
+                                {
+                                    EXPECT_EQ(resp.head.sessionTaskId, sessionTaskId);
+                                    EXPECT_TRUE(resp.isSuccess);
+                                });
+}
+
+TEST_F(TestAiAgora, CheckHandleTaskDeleteReq_NoContext)
+{
+    constexpr common::GTID kUnallocated = 0x7001;
+
+    EXPECT_CALL(mockSysLog_, log(utils::LogLevel::WRN, ::testing::_)).Times(1);
+
+    sendToMe(TaskDeleteReq{UserHead{kUnallocated, {}}});
+
+    checkOutput<TaskDeleteReq>(sessionMgr_, [&](TaskDeleteReq &req)
+                               { EXPECT_EQ(req.head.sessionTaskId, kUnallocated); });
+    checkOutput<TaskDeleteResp>(accessGateway_,
+                                [](TaskDeleteResp &resp) { EXPECT_TRUE(resp.isSuccess); });
 }
 
 TEST_F(TestAiAgora, CheckHandleAiAgoraResetReq_Success)

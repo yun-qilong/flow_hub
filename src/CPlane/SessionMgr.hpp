@@ -48,7 +48,6 @@ class SessionMgr : public fw::EoBase<SessionMgr>
 
   private:
     void processCreateTask(common::TaskType taskType, TaskCreateResp &resp);
-    void processDeleteTask(common::GTID gtid, TaskDeleteResp &resp);
     void processCreateBusTasks(const std::vector<common::TaskType> &taskTypes,
                                BusTaskCreateResp &resp);
     void processDeleteBusTasks(const std::vector<common::GTID> &gtids, BusTaskDeleteResp &resp);

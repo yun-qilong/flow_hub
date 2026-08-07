@@ -98,12 +98,12 @@ TEST_F(TestAccessGateway, CheckHandleTaskCreateReq_FillsCookieAndForwards)
                                { EXPECT_EQ(msg.cookie.adapterAddr, stubAddress(cliAdapter_)); });
 }
 
-TEST_F(TestAccessGateway, CheckHandleTaskDeleteReq_ForwardsToSessionMgr)
+TEST_F(TestAccessGateway, CheckHandleTaskDeleteReq_ForwardsToSessionDispatcher)
 {
     auto req = TaskDeleteReq{};
     fillDefaultHead(req);
     sendToMe(std::move(req));
-    checkOutput<TaskDeleteReq>(sessionMgr_, [](TaskDeleteReq &) {});
+    checkOutput<TaskDeleteReq>(sessionDispatcher_, [](TaskDeleteReq &) {});
 }
 
 TEST_F(TestAccessGateway, CheckHandleAiAgoraChatReq_ForwardsToSessionDispatcher)
@@ -242,8 +242,8 @@ TEST_F(TestAccessGateway, CheckHandleTaskConfigReq_ForwardsToSessionDispatcher)
     fillDefaultHead(req);
     req.payload = "{}";
     sendToMe(std::move(req));
-    checkOutput<TaskConfigReq>(sessionDispatcher_, [](TaskConfigReq &msg)
-                               { EXPECT_EQ(msg.payload, "{}"); });
+    checkOutput<TaskConfigReq>(sessionDispatcher_,
+                               [](TaskConfigReq &msg) { EXPECT_EQ(msg.payload, "{}"); });
 }
 
 TEST_F(TestAccessGateway, CheckHandleAiAgoraResetResp_RoutesToAdapter)

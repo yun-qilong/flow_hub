@@ -62,9 +62,12 @@ class TestSessionMgr : public fw::EoTestBase
         fillDefaultHead(del);
         del.head.sessionTaskId = gtid;
         sendToMe(std::move(del));
+        pumpTestee();
+    }
 
-        checkOutput<TaskDeleteResp>(accessGateway_,
-                                    [&](TaskDeleteResp &msg) { EXPECT_TRUE(msg.isSuccess); });
+    void pumpTestee()
+    {
+        verifyAllStubsEmpty(std::chrono::milliseconds(50));
     }
 };
 
@@ -78,7 +81,7 @@ TEST_F(TestSessionMgr, CheckHandleTaskCreateReq_Success)
 
 TEST_F(TestSessionMgr, CheckHandleTaskDeleteReq_Success)
 {
-    EXPECT_CALL(*mockLog_, log(utils::LogLevel::INFO, ::testing::_)).Times(4);
+    EXPECT_CALL(*mockLog_, log(utils::LogLevel::INFO, ::testing::_)).Times(3);
 
     auto created = createTask();
     deleteTask(created);
@@ -86,21 +89,18 @@ TEST_F(TestSessionMgr, CheckHandleTaskDeleteReq_Success)
 
 TEST_F(TestSessionMgr, CheckHandleTaskDeleteReq_InvalidGtid)
 {
-    EXPECT_CALL(*mockLog_, log(utils::LogLevel::INFO, ::testing::_)).Times(1);
     EXPECT_CALL(*mockLog_, log(utils::LogLevel::ERR, ::testing::_)).Times(1);
 
     auto del = TaskDeleteReq{};
     fillDefaultHead(del);
     del.head.sessionTaskId = common::kInvalidGtid;
     sendToMe(std::move(del));
-
-    checkOutput<TaskDeleteResp>(accessGateway_,
-                                [&](TaskDeleteResp &msg) { EXPECT_FALSE(msg.isSuccess); });
+    pumpTestee();
 }
 
 TEST_F(TestSessionMgr, CheckHandleTaskDeleteReq_AfterDeleteAllocatesNext)
 {
-    EXPECT_CALL(*mockLog_, log(utils::LogLevel::INFO, ::testing::_)).Times(6);
+    EXPECT_CALL(*mockLog_, log(utils::LogLevel::INFO, ::testing::_)).Times(5);
 
     auto first = createTask();
     deleteTask(first);
