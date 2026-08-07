@@ -266,6 +266,22 @@ def check_whitelist(results, whitelist, repo_root):
     return has_new, violations
 
 
+def resolve_tidy_bin():
+    env_bin = os.environ.get("CLANG_TIDY_BIN")
+    if env_bin:
+        return env_bin
+    home_tools = Path.home() / "tools"
+    if home_tools.is_dir():
+        candidates = sorted(
+            home_tools.glob("llvm-*/bin/clang-tidy"),
+            key=lambda p: tuple(int(x) for x in re.findall(r"\d+", p.name)[:3]),
+            reverse=True,
+        )
+        if candidates:
+            return str(candidates[0])
+    return "clang-tidy"
+
+
 def main():
     build_dir = Path("build")
     ccdb_path = build_dir / "compile_commands.json"
@@ -292,7 +308,7 @@ def main():
 
     files = sorted(set(e["file"] for e in project_entries))
     tidy_config = Path(".clang-tidy")
-    tidy_bin = os.environ.get("CLANG_TIDY_BIN", "clang-tidy")
+    tidy_bin = resolve_tidy_bin()
 
     # Print version for CI/local diagnostics
     ver = subprocess.run([tidy_bin, "--version"], capture_output=True, text=True)

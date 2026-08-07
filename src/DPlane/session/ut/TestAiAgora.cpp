@@ -2,6 +2,8 @@
 #include "DPlane/session/AiAgora.hpp"
 #include "fw/EoTestBase.hpp"
 
+#include <nlohmann/json.hpp>
+
 #include <gtest/gtest.h>
 #include <string>
 
@@ -269,8 +271,11 @@ TEST_F(TestAiAgora, CheckHandleAiAgoraChatReq_Success)
             EXPECT_EQ(req.head.sessionTaskId, sessionTaskId);
             ASSERT_EQ(req.head.busTaskIds.size(), 1u);
             EXPECT_EQ(req.head.busTaskIds.at(0), kBusTaskId);
-            EXPECT_NE(req.messagesJson.find("hello"), std::string::npos);
-            EXPECT_NE(req.messagesJson.find("\"role\":\"user\""), std::string::npos);
+            auto parsed = nlohmann::json::parse(req.messagesJson);
+            ASSERT_TRUE(parsed.is_array());
+            ASSERT_EQ(parsed.size(), 1u);
+            EXPECT_EQ(parsed.at(0).at("role").get<std::string>(), "user");
+            EXPECT_EQ(parsed.at(0).at("content").get<std::string>(), "hello");
         },
         [&]()
         {
@@ -294,6 +299,59 @@ TEST_F(TestAiAgora, CheckHandleAiAgoraChatReq_Success)
     pool_.getContext<common::context::AiAgoraContext>(sessionTaskId)
         .useOrFailed([](common::context::AiAgoraContext &ctx) { EXPECT_EQ(ctx.state, 2); },
                      []() { FAIL() << "context missing"; });
+}
+
+TEST_F(TestAiAgora, CheckHandleAiAgoraChatReq_SpecialChars_ValidJson)
+{
+    auto sessionTaskId = allocateSession();
+    ASSERT_NE(sessionTaskId, common::kInvalidGtid);
+    runSuccessFlow(sessionTaskId);
+
+    sendToMe(AiAgoraChatReq{UserHead{sessionTaskId, {}}, "hello \"quoted\" 你好\nline"});
+
+    checkOutputAndReply<AiChatReq, AiChatResp>(
+        router_,
+        [&](AiChatReq &req)
+        {
+            auto parsed = nlohmann::json::parse(req.messagesJson);
+            ASSERT_TRUE(parsed.is_array());
+            ASSERT_EQ(parsed.size(), 1u);
+            EXPECT_EQ(parsed.at(0).at("role").get<std::string>(), "user");
+            EXPECT_EQ(parsed.at(0).at("content").get<std::string>(), "hello \"quoted\" 你好\nline");
+        },
+        [&]()
+        {
+            auto head = UserHead{};
+            head.sessionTaskId = sessionTaskId;
+            head.busTaskIds = {kBusTaskId};
+            return AiChatResp{head, true, 0, "hi back"};
+        }());
+
+    checkOutput<AiAgoraChatResp>(accessGateway_,
+                                 [&](AiAgoraChatResp &resp)
+                                 {
+                                     EXPECT_EQ(resp.head.sessionTaskId, sessionTaskId);
+                                     EXPECT_TRUE(resp.isComplete);
+                                     EXPECT_EQ(resp.errorCode, 0);
+                                 });
+}
+
+TEST_F(TestAiAgora, CheckCompleteConfig_InitializesTopicBase)
+{
+    auto sessionTaskId = allocateSession();
+    ASSERT_NE(sessionTaskId, common::kInvalidGtid);
+    runSuccessFlow(sessionTaskId);
+
+    pool_.getContext<common::context::AiAgoraContext>(sessionTaskId)
+        .useOrFailed(
+            [](common::context::AiAgoraContext &ctx)
+            {
+                EXPECT_EQ(ctx.topicBaseJsonSize, 2U);
+                EXPECT_EQ(ctx.topicBaseJson.at(0), static_cast<uint8_t>('['));
+                EXPECT_EQ(ctx.topicBaseJson.at(1), static_cast<uint8_t>(']'));
+                EXPECT_EQ(ctx.state, 2);
+            },
+            []() { FAIL() << "context missing"; });
 }
 
 TEST_F(TestAiAgora, CheckHandleAiAgoraChatReq_SuccessFalse)
@@ -455,6 +513,102 @@ TEST_F(TestAiAgora, CheckHandleAiAgoraChatReq_AppendAndEscape)
         }());
 
     checkOutput<AiAgoraChatResp>(accessGateway_, [&](AiAgoraChatResp &) {});
+}
+
+TEST_F(TestAiAgora, CheckHandleAiAgoraResetReq_NotConfigured)
+{
+    auto sessionTaskId = allocateSession();
+    ASSERT_NE(sessionTaskId, common::kInvalidGtid);
+
+    sendToMe(AiAgoraResetReq{UserHead{sessionTaskId, {}}});
+
+    checkOutput<AiAgoraResetResp>(accessGateway_,
+                                  [&](AiAgoraResetResp &resp)
+                                  {
+                                      EXPECT_EQ(resp.head.sessionTaskId, sessionTaskId);
+                                      EXPECT_FALSE(resp.isSuccess);
+                                  });
+}
+
+TEST_F(TestAiAgora, CheckHandleAiAgoraResetReq_Configuring)
+{
+    constexpr uint8_t kConfiguringState = 1;
+
+    auto sessionTaskId = allocateSession();
+    ASSERT_NE(sessionTaskId, common::kInvalidGtid);
+
+    pool_.getContext<common::context::AiAgoraContext>(sessionTaskId)
+        .useOrFailed(
+            [](common::context::AiAgoraContext &ctx) { ctx.state = kConfiguringState; },
+            []() { FAIL() << "context missing"; });
+
+    sendToMe(AiAgoraResetReq{UserHead{sessionTaskId, {}}});
+
+    checkOutput<AiAgoraResetResp>(accessGateway_,
+                                  [&](AiAgoraResetResp &resp)
+                                  {
+                                      EXPECT_EQ(resp.head.sessionTaskId, sessionTaskId);
+                                      EXPECT_FALSE(resp.isSuccess);
+                                  });
+}
+
+TEST_F(TestAiAgora, CheckHandleAiAgoraResetReq_Success)
+{
+    auto sessionTaskId = allocateSession();
+    ASSERT_NE(sessionTaskId, common::kInvalidGtid);
+    runSuccessFlow(sessionTaskId);
+
+    sendToMe(AiAgoraResetReq{UserHead{sessionTaskId, {}}});
+
+    checkOutput<AiAgoraResetResp>(accessGateway_,
+                                  [&](AiAgoraResetResp &resp)
+                                  {
+                                      EXPECT_EQ(resp.head.sessionTaskId, sessionTaskId);
+                                      EXPECT_TRUE(resp.isSuccess);
+                                      EXPECT_GT(resp.estimatedTopicCount, 0U);
+                                  });
+
+    pool_.getContext<common::context::AiAgoraContext>(sessionTaskId)
+        .useOrFailed(
+            [&](common::context::AiAgoraContext &ctx)
+            {
+                EXPECT_EQ(ctx.state, 2);
+                EXPECT_EQ(ctx.topicBaseJsonSize, 2U);
+                EXPECT_EQ(ctx.currentRound, 0U);
+                EXPECT_EQ(ctx.pendingReplies, 0U);
+                EXPECT_EQ(ctx.debateTaskIds.at(0), kBusTaskId);
+            },
+            []() { FAIL() << "context missing"; });
+}
+
+TEST_F(TestAiAgora, CheckHandleAiAgoraResetReq_MidDebate)
+{
+    auto sessionTaskId = allocateSession();
+    ASSERT_NE(sessionTaskId, common::kInvalidGtid);
+    runSuccessFlow(sessionTaskId);
+
+    sendToMe(AiAgoraChatReq{UserHead{sessionTaskId, {}}, "hello"});
+    checkOutput<AiChatReq>(router_, [](AiChatReq &) {});
+
+    sendToMe(AiAgoraResetReq{UserHead{sessionTaskId, {}}});
+
+    checkOutput<AiAgoraResetResp>(accessGateway_,
+                                  [&](AiAgoraResetResp &resp) { EXPECT_TRUE(resp.isSuccess); });
+
+    auto lateHead = UserHead{};
+    lateHead.sessionTaskId = sessionTaskId;
+    lateHead.busTaskIds = {kBusTaskId};
+    sendToMeFrom(router_, testee_, AiChatResp{lateHead, true, 0, "late"});
+
+    pool_.getContext<common::context::AiAgoraContext>(sessionTaskId)
+        .useOrFailed(
+            [](common::context::AiAgoraContext &ctx)
+            {
+                EXPECT_EQ(ctx.state, 2);
+                EXPECT_EQ(ctx.pendingReplies, 0);
+                EXPECT_EQ(ctx.topicBaseJsonSize, 2U);
+            },
+            []() { FAIL() << "context missing"; });
 }
 
 } // namespace

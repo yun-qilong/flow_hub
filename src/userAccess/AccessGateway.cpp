@@ -9,6 +9,9 @@ using TaskDeleteReq = common::message::TaskDeleteReq;
 using TaskDeleteResp = common::message::TaskDeleteResp;
 using AiAgoraChatReq = common::message::AiAgoraChatReq;
 using AiAgoraChatResp = common::message::AiAgoraChatResp;
+using AiAgoraResetReq = common::message::AiAgoraResetReq;
+using AiAgoraResetResp = common::message::AiAgoraResetResp;
+using TaskConfigReq = common::message::TaskConfigReq;
 using TaskConfigResp = common::message::TaskConfigResp;
 using TempConfig = common::message::TempConfig;
 
@@ -52,6 +55,11 @@ void AccessGateway::handle(AiAgoraChatReq req)
     delegateTo(sessionDispatcherAddr_, std::move(req));
 }
 
+void AccessGateway::handle(TaskConfigReq req)
+{
+    delegateTo(sessionDispatcherAddr_, std::move(req));
+}
+
 void AccessGateway::handle(AiAgoraChatResp resp)
 {
     auto idx = static_cast<size_t>(resp.head.sessionTaskId & 0x0FFF);
@@ -63,6 +71,26 @@ void AccessGateway::handle(AiAgoraChatResp resp)
     else
     {
         LG_ERR("no adapter mapped for sessionTaskId=0x%x, dropping AiAgoraChatResp",
+               resp.head.sessionTaskId);
+    }
+}
+
+void AccessGateway::handle(AiAgoraResetReq req)
+{
+    delegateTo(sessionDispatcherAddr_, std::move(req));
+}
+
+void AccessGateway::handle(AiAgoraResetResp resp)
+{
+    auto idx = static_cast<size_t>(resp.head.sessionTaskId & 0x0FFF);
+    auto adapter = gtidToAdapter_.at(idx);
+    if (adapter)
+    {
+        delegateTo(adapter, std::move(resp));
+    }
+    else
+    {
+        LG_ERR("no adapter mapped for sessionTaskId=0x%x, dropping AiAgoraResetResp",
                resp.head.sessionTaskId);
     }
 }

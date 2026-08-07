@@ -54,10 +54,12 @@ echo "Format check passed"'''
       steps {
         dir('src') {
           sh '''echo "=== clang-tidy diagnostics ==="
-which clang-tidy-14 || echo "clang-tidy-14 NOT FOUND"
-clang-tidy-14 --version || echo "version check failed"
+TIDY_BIN="$(ls -d "$HOME"/tools/llvm-*/bin/clang-tidy 2>/dev/null | sort -V | tail -1)"
+[ -n "$TIDY_BIN" ] || TIDY_BIN="clang-tidy-14"
+echo "Using: $TIDY_BIN"
+"$TIDY_BIN" --version || echo "version check failed"
 echo "================================"
-CLANG_TIDY_BIN=clang-tidy-14 python3 scripts/run_tidy.py'''
+CLANG_TIDY_BIN="$TIDY_BIN" python3 scripts/run_tidy.py'''
         }
       }
     }

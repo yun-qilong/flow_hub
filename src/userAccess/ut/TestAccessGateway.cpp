@@ -228,4 +228,39 @@ TEST_F(TestAccessGateway, CheckMapping_DeleteUnmappedIdempotent)
     checkOutput<TaskDeleteResp>(cliAdapter_, [](TaskDeleteResp &) {});
 }
 
+TEST_F(TestAccessGateway, CheckHandleAiAgoraResetReq_ForwardsToSessionDispatcher)
+{
+    auto req = AiAgoraResetReq{};
+    fillDefaultHead(req);
+    sendToMe(std::move(req));
+    checkOutput<AiAgoraResetReq>(sessionDispatcher_, [](AiAgoraResetReq &) {});
+}
+
+TEST_F(TestAccessGateway, CheckHandleTaskConfigReq_ForwardsToSessionDispatcher)
+{
+    auto req = TaskConfigReq{};
+    fillDefaultHead(req);
+    req.payload = "{}";
+    sendToMe(std::move(req));
+    checkOutput<TaskConfigReq>(sessionDispatcher_, [](TaskConfigReq &msg)
+                               { EXPECT_EQ(msg.payload, "{}"); });
+}
+
+TEST_F(TestAccessGateway, CheckHandleAiAgoraResetResp_RoutesToAdapter)
+{
+    constexpr common::GTID kGtid = 0x7005;
+
+    writeMapping(kGtid);
+
+    auto resp = AiAgoraResetResp{};
+    fillDefaultHead(resp);
+    resp.head.sessionTaskId = kGtid;
+    resp.isSuccess = true;
+    resp.estimatedTopicCount = 42;
+    sendToMe(std::move(resp));
+
+    checkOutput<AiAgoraResetResp>(cliAdapter_, [](AiAgoraResetResp &msg)
+                                  { EXPECT_EQ(msg.estimatedTopicCount, 42); });
+}
+
 } // namespace

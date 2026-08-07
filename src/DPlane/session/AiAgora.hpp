@@ -51,6 +51,7 @@ class AiAgora : public fw::EoBase<AiAgora>
     void handle(const common::message::AiChatConfigResp &resp);
     void handle(const common::message::AiAgoraChatReq &req);
     void handle(const common::message::AiChatResp &resp);
+    void handle(const common::message::AiAgoraResetReq &req);
 
   protected:
     void init() override
@@ -60,6 +61,7 @@ class AiAgora : public fw::EoBase<AiAgora>
         onMsg<common::message::AiChatConfigResp>();
         onMsg<common::message::AiAgoraChatReq>();
         onMsg<common::message::AiChatResp>();
+        onMsg<common::message::AiAgoraResetReq>();
     }
 
   private:
@@ -98,6 +100,7 @@ class AiAgora : public fw::EoBase<AiAgora>
     void completeChat(ContextType &ctx, const common::message::UserHead &head,
                       const std::string &content);
     void failChat(ContextType &ctx, const common::message::UserHead &head, uint8_t errorCode);
+    static void resetContext(ContextType &ctx);
     static bool appendTopicMessage(ContextType &ctx, const std::string &item);
     static std::string buildTopicMessage(const std::string &role, const std::string &content);
     static common::message::AiAgoraChatResp buildChatResp(const common::message::UserHead &head,

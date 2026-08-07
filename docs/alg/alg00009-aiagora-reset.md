@@ -55,10 +55,19 @@
 
 ## 5. 消息路径
 
+下行（入向路由，经 SessionDispatcher 按 `sessionTaskId` 高位 TaskType 查找编排器，见 alg00003）：
+
 ```
-前端 → AiAgoraResetReq → AccessGateway（alg00002：D 面）→ SessionDispatcher（alg00003：按 TaskType）→ 编排器
-编排器 → AiAgoraResetResp → SessionDispatcher → AccessGateway（查 GTID→Adapter 映射）→ 前端
+前端 → AiAgoraResetReq → AccessGateway → SessionDispatcher → 编排器
 ```
+
+上行（出向直发，编排器持 `accessGatewayAddr_`，不经 SessionDispatcher，见 alg00003）：
+
+```
+编排器 → AiAgoraResetResp → AccessGateway（查 GTID→Adapter 映射）→ 前端
+```
+
+> SessionDispatcher 只注册 `AiAgoraResetReq`（入向路由），不注册 `AiAgoraResetResp`。
 
 ## 6. Boundary Conditions
 

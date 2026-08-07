@@ -3,6 +3,9 @@
 #include "fw/EoEnv.hpp"
 #include "utils/SysLog.hpp"
 
+#include <nlohmann/json.hpp>
+
+#include <cstdlib>
 #include <iostream>
 #include <poll.h>
 #include <sstream>
@@ -61,9 +64,21 @@ void CliAdapter::dispatchInput(const std::string &line)
         return;
     }
 
+    dispatchText(line);
+}
+
+void CliAdapter::dispatchText(const std::string &line)
+{
     if (state_ == State::EnteringKey)
     {
         sendApiKey(line);
+        return;
+    }
+
+    if (state_ == State::Configuring)
+    {
+        *out_ << "Please wait for configuration.\n";
+        showPrompt();
         return;
     }
 
@@ -102,10 +117,15 @@ void CliAdapter::showPrompt()
 namespace
 {
 
+constexpr const char *kDefaultApiUrl = "https://api.deepseek.com";
+constexpr const char *kDefaultModel = "deepseek-v4-flash";
+constexpr const char *kDefaultSystemPrompt = "You are a helpful assistant.";
+
 enum class Cmd : uint8_t
 {
     New,
     Quit,
+    Reset,
     Help,
     Exit,
     Unknown
@@ -120,6 +140,10 @@ Cmd parseCmd(const std::string &cmd)
     if (cmd == "/quit")
     {
         return Cmd::Quit;
+    }
+    if (cmd == "/reset")
+    {
+        return Cmd::Reset;
     }
     if (cmd == "/help")
     {
@@ -147,6 +171,9 @@ void CliAdapter::handleCommandImpl<CliAdapter::State::HaveNotGtid>(const std::st
         *out_ << "Creating new task...\n";
         sendTaskCreate();
         return;
+    case Cmd::Reset:
+        sendReset();
+        return;
     case Cmd::Help:
         showHelp();
         return;
@@ -171,6 +198,9 @@ void CliAdapter::handleCommandImpl<CliAdapter::State::EnteringKey>(const std::st
     {
     case Cmd::Quit:
         sendTaskDelete();
+        return;
+    case Cmd::Reset:
+        sendReset();
         return;
     case Cmd::Help:
         showHelp();
@@ -197,6 +227,9 @@ void CliAdapter::handleCommandImpl<CliAdapter::State::HasGtid>(const std::string
     case Cmd::Quit:
         sendTaskDelete();
         return;
+    case Cmd::Reset:
+        sendReset();
+        return;
     case Cmd::Help:
         showHelp();
         return;
@@ -222,6 +255,9 @@ void CliAdapter::handleCommand(const std::string &line)
         break;
     case State::HasGtid:
         handleCommandImpl<State::HasGtid>(line);
+        break;
+    case State::Configuring:
+        *out_ << "Please wait for configuration.\n";
         break;
     }
 }
@@ -257,6 +293,22 @@ void CliAdapter::sendTaskDelete()
     }
 
     common::message::TaskDeleteReq req;
+    req.head.sessionTaskId = currentGtid_;
+    waiting_ = true;
+    fw::anonSendTo(gatewayAddr(), std::move(req));
+}
+
+void CliAdapter::sendReset()
+{
+    if (currentGtid_ == common::kInvalidGtid)
+    {
+        *out_ << "No active task.\n";
+        showPrompt();
+        return;
+    }
+
+    // reset aborts the in-flight topic, so it bypasses the waiting_ guard.
+    common::message::AiAgoraResetReq req;
     req.head.sessionTaskId = currentGtid_;
     waiting_ = true;
     fw::anonSendTo(gatewayAddr(), std::move(req));
@@ -305,9 +357,41 @@ void CliAdapter::sendApiKey(const std::string &key)
     }
 
     fw::anonSendTo(aiApiAdapterAddr_, common::message::ApiKeyUpdate{key});
-    state_ = State::HasGtid;
-    *out_ << "API key set.\n";
-    showPrompt();
+    sendTaskConfig(key);
+}
+
+void CliAdapter::sendTaskConfig(const std::string &apiKey)
+{
+    common::message::TaskConfigReq req;
+    req.head.sessionTaskId = currentGtid_;
+    req.payload = buildSingleAiPayload(apiKey);
+    state_ = State::Configuring;
+    waiting_ = true;
+    fw::anonSendTo(gatewayAddr(), std::move(req));
+    *out_ << "Configuring session...\n";
+}
+
+std::string CliAdapter::buildSingleAiPayload(const std::string &apiKey)
+{
+    const char *apiUrl = std::getenv("FLOWHUB_API_URL");
+    const char *model = std::getenv("FLOWHUB_MODEL");
+
+    nlohmann::json payload;
+    payload["aiCount"] = 1;
+    payload["hasJudge"] = false;
+    payload["maxRounds"] = 5;
+    payload["maxResponseLength"] = 500;
+    payload["timeoutMs"] = 30000;
+
+    nlohmann::json config;
+    config["apiUrl"] = apiUrl != nullptr ? apiUrl : kDefaultApiUrl;
+    config["apiKey"] = apiKey;
+    config["model"] = model != nullptr ? model : kDefaultModel;
+    config["systemPrompt"] = kDefaultSystemPrompt;
+    config["temperature"] = 0.7;
+    payload["configs"] = nlohmann::json::array({config});
+
+    return payload.dump();
 }
 
 void CliAdapter::showHelp()
@@ -352,6 +436,20 @@ void CliAdapter::handle(const common::message::AiAgoraChatResp &resp)
     showPrompt();
 }
 
+void CliAdapter::handle(const common::message::AiAgoraResetResp &resp)
+{
+    waiting_ = false;
+    if (resp.isSuccess)
+    {
+        *out_ << "Session reset. estimatedTopicCount=" << resp.estimatedTopicCount << "\n";
+    }
+    else
+    {
+        *out_ << "Reset failed.\n";
+    }
+    showPrompt();
+}
+
 void CliAdapter::handle(const common::message::TaskCreateResp &resp)
 {
     waiting_ = false;
@@ -364,6 +462,23 @@ void CliAdapter::handle(const common::message::TaskCreateResp &resp)
     else
     {
         *out_ << "Task creation failed.\n";
+    }
+    showPrompt();
+}
+
+void CliAdapter::handle(const common::message::TaskConfigResp &resp)
+{
+    waiting_ = false;
+    if (resp.isSuccess)
+    {
+        state_ = State::HasGtid;
+        *out_ << "Session configured: 0x" << std::hex << currentGtid_ << std::dec << "\n";
+    }
+    else
+    {
+        state_ = State::HaveNotGtid;
+        currentGtid_ = 0xFFFF;
+        *out_ << "Session configuration failed.\n";
     }
     showPrompt();
 }

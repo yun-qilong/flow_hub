@@ -12,6 +12,8 @@ CLI 前端交互逻辑。**仅支持单 AI chat**（`aiCount=1`、`hasJudge=fals
 | 状态 | 提示符 | 说明 |
 |------|--------|------|
 | `haveNotGtid` | `> ` | 无会话 |
+| `enteringKey` | `Enter API key: ` | 输入 API key（/new 后进入） |
+| `configuring` | `... ` | 等待 `TaskConfigResp`（配置进行中） |
 | `hasGtid` | `[0x<gtid>]> ` | 会话中（config 已完成） |
 
 等待回复期间（`waiting`）输入被忽略，提示符显示 `... `。
@@ -20,20 +22,20 @@ CLI 前端交互逻辑。**仅支持单 AI chat**（`aiCount=1`、`hasJudge=fals
 
 | 命令 | 状态 | 行为 |
 |------|------|------|
-| `/chat` | `haveNotGtid` | 创建会话：TaskCreate + TaskConfig 流程（§3） |
+| `/new` | `haveNotGtid` | 创建会话：TaskCreate + TaskConfig 流程（§3） |
 | 普通文字 | `hasGtid` | 发 `AiAgoraChatReq`（§4） |
-| `/reset` | `hasGtid` | 发 `AiAgoraResetReq`（§4） |
+| `/reset` | 任意 | 发 `AiAgoraResetReq`；无有效 GTID 提示 "No active task."；等待期亦允许（中断在途话题）（§4） |
 | `/quit` | `hasGtid` | 发 `TaskDeleteReq`，回 `haveNotGtid`（§5） |
 | `/help` | 任意 | 显示命令帮助 |
 | `/exit` | 任意 | 退出程序 |
 
-## 3. `/chat`：创建会话
+## 3. `/new`：创建会话
 
-1. 发 `TaskCreateReq{taskType=AiAgora}`（`head.gtidList` 为空，携带 `cookie`）。
+1. 发 `TaskCreateReq{taskType=AiAgora}`（`head.sessionTaskId` 为空，携带 `cookie`）。
 2. 收 `TaskCreateResp`：
    - `isSuccess=false` → 提示失败，回 `haveNotGtid`。
-   - `isSuccess=true` → 记录 `head.sessionTaskId`（Session GTID）。
-3. 发 `TaskConfigReq`（单 AI payload，见 §3.1）。
+   - `isSuccess=true` → 记录 `head.sessionTaskId`（Session GTID），进入 `enteringKey`（输 API key）。
+3. 用户输入 API key → 发 `ApiKeyUpdate`（AiApiAdapter 认证用）+ `TaskConfigReq`（单 AI payload 含 `apiKey`，见 §3.1）→ 进入 `configuring`。
 4. 收 `TaskConfigResp`：
    - `isSuccess=true` → 进入 `hasGtid`，展示 GTID。
    - `isSuccess=false` → 提示失败，回 `haveNotGtid`（GTID 已分配，可用 `/quit` 清理）。
@@ -46,12 +48,12 @@ CLI 前端交互逻辑。**仅支持单 AI chat**（`aiCount=1`、`hasJudge=fals
 |------|-----|
 | `aiCount` | `1` |
 | `hasJudge` | `false` |
-| `maxRounds` | 默认值（实现时定） |
-| `maxResponseLength` | 默认值（实现时定） |
-| `timeoutMs` | 默认值（实现时定） |
+| `maxRounds` | `5` |
+| `maxResponseLength` | `500` |
+| `timeoutMs` | `30000` |
 | `configs[0]` | `apiUrl` / `apiKey` / `model` / `systemPrompt` / `temperature` |
 
-> `configs[0]` 参数来源：CLI 无配置 UI，由启动参数/配置文件在 main 构造时提供（实现时定）。
+> `configs[0]` 参数来源：`apiKey` 来自用户输入（与 `ApiKeyUpdate` 一致）；`apiUrl`/`model` 来自环境变量 `FLOWHUB_API_URL`/`FLOWHUB_MODEL`（缺省 `https://api.deepseek.com` / `deepseek-v4-flash`）；`systemPrompt`/`temperature` 为默认值（`"You are a helpful assistant."` / `0.7`）。
 
 ## 4. 会话中交互
 

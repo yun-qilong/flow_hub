@@ -15,6 +15,8 @@ namespace DPlane::session
 using AiAgoraContext = common::context::AiAgoraContext;
 using AiAgoraChatReq = common::message::AiAgoraChatReq;
 using AiAgoraChatResp = common::message::AiAgoraChatResp;
+using AiAgoraResetReq = common::message::AiAgoraResetReq;
+using AiAgoraResetResp = common::message::AiAgoraResetResp;
 using AiChatReq = common::message::AiChatReq;
 using AiChatResp = common::message::AiChatResp;
 using TaskConfigReq = common::message::TaskConfigReq;
@@ -224,8 +226,7 @@ void AiAgora::processConfig(AiAgoraContext &ctx, const TaskConfigReq &req)
                 requestThen(
                     sessionMgrAddr_, std::chrono::milliseconds(parsed.timeoutMs),
                     BusTaskCreateReq{req.head, buildTaskTypes(parsed)},
-                    [this, cfg = std::move(parsed)](BusTaskCreateResp &resp) mutable
-                    { onBusTaskCreated(cfg, resp); },
+                    [this, cfg = parsed](BusTaskCreateResp &resp) { onBusTaskCreated(cfg, resp); },
                     [this, head = req.head](const caf::error &) { failConfig(head); });
             },
             [&]()
@@ -352,7 +353,7 @@ void AiAgora::clearPendingBit(AiAgoraContext &ctx, uint8_t aiIndex)
 
 void AiAgora::completeConfig(const UserHead &head, AiAgoraContext &ctx)
 {
-    ctx.state = kStateWaitingForTopic;
+    resetContext(ctx);
     auto estimated = static_cast<uint16_t>(common::kTopicBaseJsonSize / ctx.maxCharPerTopic);
     sendTo(accessGatewayAddr_, TaskConfigResp{head, true, estimated});
 }
@@ -479,6 +480,42 @@ void AiAgora::failChat(AiAgoraContext &ctx, const UserHead &head, uint8_t errorC
     ctx.state = kStateWaitingForTopic;
     ctx.pendingReplies = 0;
     sendTo(accessGatewayAddr_, buildChatResp(head, true, false, 0, errorCode, ctx.state, ""));
+}
+
+void AiAgora::handle(const AiAgoraResetReq &req)
+{
+    pool_.getContext<AiAgoraContext>(req.head.sessionTaskId)
+        .useOrFailed(
+            [&](AiAgoraContext &ctx)
+            {
+                if (ctx.state == kStateWaitingForTopic or
+                    ctx.state == kStateWaitingForDebateReplies or
+                    ctx.state == kStateWaitingForJudgeVerdict)
+                {
+                    resetContext(ctx);
+                    auto estimated =
+                        static_cast<uint16_t>(common::kTopicBaseJsonSize / ctx.maxCharPerTopic);
+                    sendTo(accessGatewayAddr_, AiAgoraResetResp{req.head, true, estimated});
+                    return;
+                }
+                sendTo(accessGatewayAddr_, AiAgoraResetResp{req.head, false, 0});
+            },
+            [&]()
+            {
+                LG_WRN("AiAgora: no session context for 0x%x", req.head.sessionTaskId);
+                sendTo(accessGatewayAddr_, AiAgoraResetResp{req.head, false, 0});
+            });
+}
+
+void AiAgora::resetContext(AiAgoraContext &ctx)
+{
+    ctx.topicBaseJsonSize = 2;
+    ctx.topicBaseJson.at(0) = static_cast<uint8_t>('[');
+    ctx.topicBaseJson.at(1) = static_cast<uint8_t>(']');
+    ctx.lastRoundResponses.fill(0);
+    ctx.currentRound = 0;
+    ctx.pendingReplies = 0;
+    ctx.state = kStateWaitingForTopic;
 }
 
 bool AiAgora::appendTopicMessage(AiAgoraContext &ctx, const std::string &item)

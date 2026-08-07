@@ -53,6 +53,13 @@ class TestCliAdapter : public fw::EoTestBase
         cli_->waiting_ = false;
     }
 
+    void enterConfiguring(uint16_t gtid)
+    {
+        cli_->state_ = CliAdapter::State::Configuring;
+        cli_->currentGtid_ = gtid;
+        cli_->waiting_ = false;
+    }
+
     bool isHaveNotGtid() const
     {
         return cli_->state_ == CliAdapter::State::HaveNotGtid;
@@ -61,6 +68,11 @@ class TestCliAdapter : public fw::EoTestBase
     bool isEnteringKey() const
     {
         return cli_->state_ == CliAdapter::State::EnteringKey;
+    }
+
+    bool isConfiguring() const
+    {
+        return cli_->state_ == CliAdapter::State::Configuring;
     }
 
     bool isHasGtid() const
@@ -148,7 +160,13 @@ TEST_F(TestCliAdapter, DispatchInput_EnteringKey_TextSendsApiKey)
 
     checkOutput<ApiKeyUpdate>(aiAdapterStub_,
                               [](ApiKeyUpdate &msg) { EXPECT_EQ(msg.apiKey, "sk-abc"); });
-    EXPECT_TRUE(isHasGtid());
+    checkOutput<TaskConfigReq>(
+        [](TaskConfigReq &msg)
+        {
+            EXPECT_EQ(msg.head.sessionTaskId, 0x1234);
+            EXPECT_NE(msg.payload.find("\"apiKey\":\"sk-abc\""), std::string::npos);
+        });
+    EXPECT_TRUE(isConfiguring());
 }
 
 TEST_F(TestCliAdapter, DispatchInput_HasGtid_TextSendsChat)
@@ -338,8 +356,61 @@ TEST_F(TestCliAdapter, SendApiKey_Success)
 
     checkOutput<ApiKeyUpdate>(aiAdapterStub_,
                               [](ApiKeyUpdate &msg) { EXPECT_EQ(msg.apiKey, "sk-abc"); });
+    checkOutput<TaskConfigReq>(
+        [](TaskConfigReq &msg)
+        {
+            EXPECT_EQ(msg.head.sessionTaskId, 0x1234);
+            EXPECT_NE(msg.payload.find("\"apiKey\":\"sk-abc\""), std::string::npos);
+        });
+    EXPECT_TRUE(isConfiguring());
+    expectOutputContains("Configuring session...");
+}
+
+TEST_F(TestCliAdapter, HandleTaskConfigResp_Success)
+{
+    enterConfiguring(0x1234);
+    setWaiting(true);
+    clearOutput();
+
+    auto resp = TaskConfigResp{};
+    fillDefaultHead(resp);
+    resp.head.sessionTaskId = 0x1234;
+    resp.isSuccess = true;
+    resp.estimatedTopicCount = 10;
+    sendToCli(std::move(resp));
+
+    EXPECT_FALSE(isWaiting());
     EXPECT_TRUE(isHasGtid());
-    expectOutputContains("API key set.");
+    expectOutputContains("Session configured");
+}
+
+TEST_F(TestCliAdapter, HandleTaskConfigResp_Failure)
+{
+    enterConfiguring(0x1234);
+    setWaiting(true);
+    clearOutput();
+
+    auto resp = TaskConfigResp{};
+    fillDefaultHead(resp);
+    resp.head.sessionTaskId = 0x1234;
+    resp.isSuccess = false;
+    resp.estimatedTopicCount = 0;
+    sendToCli(std::move(resp));
+
+    EXPECT_FALSE(isWaiting());
+    EXPECT_TRUE(isHaveNotGtid());
+    EXPECT_EQ(currentGtid(), common::kInvalidGtid);
+    expectOutputContains("Session configuration failed.");
+}
+
+TEST_F(TestCliAdapter, DispatchInput_Configuring_TextPromptsWait)
+{
+    enterConfiguring(0x1234);
+    clearOutput();
+
+    cli_->dispatchInput("hello");
+
+    expectOutputContains("Please wait for configuration.");
 }
 
 TEST_F(TestCliAdapter, HandleTempConfig_SetsGateway)
@@ -549,6 +620,55 @@ TEST_F(TestCliAdapter, ShowPrompt_Default)
     cli_->showPrompt();
 
     expectOutputContains("> ");
+}
+
+TEST_F(TestCliAdapter, DispatchInput_HasGtid_ResetSendsResetReq)
+{
+    enterHasGtid(0x1234);
+
+    cli_->dispatchInput("/reset");
+
+    checkOutput<AiAgoraResetReq>(
+        [](AiAgoraResetReq &msg) { EXPECT_EQ(msg.head.sessionTaskId, 0x1234); });
+    EXPECT_TRUE(isWaiting());
+}
+
+TEST_F(TestCliAdapter, DispatchInput_HasGtid_WaitingResetStillSends)
+{
+    enterHasGtid(0x1234);
+    setWaiting(true);
+
+    cli_->dispatchInput("/reset");
+
+    checkOutput<AiAgoraResetReq>(
+        [](AiAgoraResetReq &msg) { EXPECT_EQ(msg.head.sessionTaskId, 0x1234); });
+    EXPECT_TRUE(isWaiting());
+}
+
+TEST_F(TestCliAdapter, DispatchInput_NoGtid_ResetPrompts)
+{
+    enterHaveNotGtid();
+    clearOutput();
+
+    cli_->dispatchInput("/reset");
+
+    expectOutputContains("No active task.");
+}
+
+TEST_F(TestCliAdapter, HandleResetResp_PrintsEstimated)
+{
+    enterHasGtid(0x1234);
+    setWaiting(true);
+    clearOutput();
+
+    auto resp = AiAgoraResetResp{};
+    fillDefaultHead(resp);
+    resp.isSuccess = true;
+    resp.estimatedTopicCount = 7;
+    sendToCli(std::move(resp));
+
+    EXPECT_FALSE(isWaiting());
+    expectOutputContains("estimatedTopicCount=7");
 }
 
 } // namespace userAccess
