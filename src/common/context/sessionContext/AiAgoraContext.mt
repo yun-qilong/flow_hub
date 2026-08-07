@@ -7,6 +7,7 @@ context AiAgoraContext
     uint32 timeoutMs
     uint16 pendingReplies
     uint8[10485760] topicBaseJson
+    uint32 topicBaseJsonSize = 2
     uint8[32768] lastRoundResponses
     uint8 currentRound
     uint8 state

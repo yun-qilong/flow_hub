@@ -4,7 +4,6 @@
 #include "utils/SysLog.hpp"
 
 #include <iostream>
-#include <nlohmann/json.hpp>
 #include <poll.h>
 #include <sstream>
 
@@ -272,12 +271,9 @@ void CliAdapter::sendChatMessage(const std::string &content)
         return;
     }
 
-    common::message::AiChatReq req;
+    common::message::AiAgoraChatReq req;
     req.head.sessionTaskId = currentGtid_;
-    req.head.busTaskIds = {currentGtid_};
-    nlohmann::json messages = nlohmann::json::array();
-    messages.push_back({{"role", "user"}, {"content", content}});
-    req.messagesJson = messages.dump();
+    req.content = content;
     waiting_ = true;
     fw::anonSendTo(gatewayAddr(), std::move(req));
     showPrompt();
@@ -349,10 +345,10 @@ void CliAdapter::handle(const common::message::TempConfig & /*cfg*/)
     gatewayAddr() = receiver().senderAddress();
 }
 
-void CliAdapter::handle(const common::message::AiChatResp &resp)
+void CliAdapter::handle(const common::message::AiAgoraChatResp &resp)
 {
     waiting_ = false;
-    *out_ << "\n" << resp.content << "\n";
+    *out_ << "\n" << resp.responses << "\n";
     showPrompt();
 }
 

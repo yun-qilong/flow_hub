@@ -4,6 +4,7 @@
 
 #include <chrono>
 #include <cmath>
+#include <cstring>
 #include <nlohmann/json.hpp>
 #include <string>
 #include <utility>
@@ -12,6 +13,10 @@ namespace DPlane::session
 {
 
 using AiAgoraContext = common::context::AiAgoraContext;
+using AiAgoraChatReq = common::message::AiAgoraChatReq;
+using AiAgoraChatResp = common::message::AiAgoraChatResp;
+using AiChatReq = common::message::AiChatReq;
+using AiChatResp = common::message::AiChatResp;
 using TaskConfigReq = common::message::TaskConfigReq;
 using TaskConfigResp = common::message::TaskConfigResp;
 using BusTaskCreateReq = common::message::BusTaskCreateReq;
@@ -220,7 +225,7 @@ void AiAgora::processConfig(AiAgoraContext &ctx, const TaskConfigReq &req)
                     sessionMgrAddr_, std::chrono::milliseconds(parsed.timeoutMs),
                     BusTaskCreateReq{req.head, buildTaskTypes(parsed)},
                     [this, cfg = std::move(parsed)](BusTaskCreateResp &resp) mutable
-                    { onBusTaskCreated(std::move(cfg), resp); },
+                    { onBusTaskCreated(cfg, resp); },
                     [this, head = req.head](const caf::error &) { failConfig(head); });
             },
             [&]()
@@ -365,6 +370,156 @@ void AiAgora::failConfig(const UserHead &head)
                 sendTo(accessGatewayAddr_, TaskConfigResp{head, false, 0});
             },
             [&]() { LG_WRN("AiAgora: no session context for 0x%x", head.sessionTaskId); });
+}
+
+void AiAgora::handle(const AiAgoraChatReq &req)
+{
+    pool_.getContext<AiAgoraContext>(req.head.sessionTaskId)
+        .useOrFailed([&](AiAgoraContext &ctx) { processChatRequest(ctx, req); }, [&]()
+                     { LG_WRN("AiAgora: no session context for 0x%x", req.head.sessionTaskId); });
+}
+
+void AiAgora::processChatRequest(AiAgoraContext &ctx, const AiAgoraChatReq &req)
+{
+    if (ctx.state != kStateWaitingForTopic)
+    {
+        LG_WRN("AiAgora: chat rejected, state=%u for 0x%x", static_cast<unsigned>(ctx.state),
+               req.head.sessionTaskId);
+        sendTo(accessGatewayAddr_,
+               buildChatResp(req.head, true, false, 0, kErrorInvalidState, ctx.state, ""));
+        return;
+    }
+    auto remaining = ctx.topicBaseJson.size() - ctx.topicBaseJsonSize;
+    if (remaining < ctx.maxCharPerTopic)
+    {
+        LG_WRN("AiAgora: topic base full for 0x%x", req.head.sessionTaskId);
+        sendTo(accessGatewayAddr_,
+               buildChatResp(req.head, true, false, 0, kErrorContextFullAtStart, ctx.state, ""));
+        return;
+    }
+    ctx.state = kStateWaitingForDebateReplies;
+    sendAiChatRequest(ctx, req);
+}
+
+void AiAgora::sendAiChatRequest(AiAgoraContext &ctx, const AiAgoraChatReq &req)
+{
+    auto item = buildTopicMessage("user", req.content);
+    if (not appendTopicMessage(ctx, item))
+    {
+        ctx.state = kStateWaitingForTopic;
+        sendTo(accessGatewayAddr_,
+               buildChatResp(req.head, true, false, 0, kErrorContextFullAtStart, ctx.state, ""));
+        return;
+    }
+    auto messagesJson = std::string(reinterpret_cast<const char *>(ctx.topicBaseJson.data()),
+                                    ctx.topicBaseJsonSize);
+    AiChatReq aiReq;
+    aiReq.head = req.head;
+    aiReq.head.busTaskIds.clear();
+    ctx.pendingReplies = 0;
+    for (uint8_t i = 0; i < 8; ++i)
+    {
+        auto gtid = ctx.debateTaskIds.at(i);
+        if (gtid != common::kInvalidGtid)
+        {
+            aiReq.head.busTaskIds.push_back(gtid);
+            ctx.pendingReplies |= static_cast<uint16_t>(1U << i);
+        }
+    }
+    aiReq.messagesJson = std::move(messagesJson);
+    sendTo(routerAddr_, std::move(aiReq));
+}
+
+void AiAgora::handle(const AiChatResp &resp)
+{
+    pool_.getContext<AiAgoraContext>(resp.head.sessionTaskId)
+        .useOrFailed([&](AiAgoraContext &ctx) { onAiChatResp(ctx, resp); }, [&]()
+                     { LG_WRN("AiAgora: no session context for 0x%x", resp.head.sessionTaskId); });
+}
+
+void AiAgora::onAiChatResp(AiAgoraContext &ctx, const AiChatResp &resp)
+{
+    if (ctx.state != kStateWaitingForDebateReplies)
+    {
+        return;
+    }
+    if (resp.aiIndex >= 8 or (ctx.pendingReplies & (1U << resp.aiIndex)) == 0)
+    {
+        LG_WRN("AiAgora: unexpected aiIndex=%u for 0x%x", static_cast<unsigned>(resp.aiIndex),
+               resp.head.sessionTaskId);
+        return;
+    }
+    if (not resp.success)
+    {
+        failChat(ctx, resp.head, kErrorNetworkTimeout);
+        return;
+    }
+    ctx.pendingReplies &= static_cast<uint16_t>(~(1U << resp.aiIndex));
+    if (ctx.pendingReplies == 0)
+    {
+        completeChat(ctx, resp.head, resp.content);
+    }
+}
+
+void AiAgora::completeChat(AiAgoraContext &ctx, const UserHead &head, const std::string &content)
+{
+    auto item = buildTopicMessage("assistant", content);
+    if (not appendTopicMessage(ctx, item))
+    {
+        failChat(ctx, head, kErrorContextFullMidRound);
+        return;
+    }
+    ctx.state = kStateWaitingForTopic;
+    sendTo(accessGatewayAddr_,
+           buildChatResp(head, true, true, kEndReasonNoJudge, kErrorNoError, ctx.state, content));
+}
+
+void AiAgora::failChat(AiAgoraContext &ctx, const UserHead &head, uint8_t errorCode)
+{
+    ctx.state = kStateWaitingForTopic;
+    ctx.pendingReplies = 0;
+    sendTo(accessGatewayAddr_, buildChatResp(head, true, false, 0, errorCode, ctx.state, ""));
+}
+
+bool AiAgora::appendTopicMessage(AiAgoraContext &ctx, const std::string &item)
+{
+    auto commaLen = (ctx.topicBaseJsonSize == 2) ? 0U : 1U;
+    auto extra = commaLen + static_cast<uint32_t>(item.size());
+    if (ctx.topicBaseJsonSize + extra > ctx.topicBaseJson.size())
+    {
+        return false;
+    }
+    auto insertAt = ctx.topicBaseJsonSize - 1;
+    ctx.topicBaseJson.at(insertAt + extra) = static_cast<uint8_t>(']');
+    if (commaLen != 0)
+    {
+        ctx.topicBaseJson.at(insertAt) = static_cast<uint8_t>(',');
+        insertAt += 1;
+    }
+    std::memcpy(ctx.topicBaseJson.data() + insertAt, item.data(), item.size());
+    ctx.topicBaseJsonSize += extra;
+    return true;
+}
+
+std::string AiAgora::buildTopicMessage(const std::string &role, const std::string &content)
+{
+    nlohmann::json item = {{"role", role}, {"content", content}};
+    return item.dump();
+}
+
+AiAgoraChatResp AiAgora::buildChatResp(const UserHead &head, bool isComplete, bool hasResponses,
+                                       uint8_t endReason, uint8_t errorCode, uint8_t currentState,
+                                       const std::string &responses)
+{
+    AiAgoraChatResp resp;
+    resp.head = head;
+    resp.isComplete = isComplete;
+    resp.hasResponses = hasResponses;
+    resp.endReason = endReason;
+    resp.errorCode = errorCode;
+    resp.currentState = currentState;
+    resp.responses = responses;
+    return resp;
 }
 
 } // namespace DPlane::session

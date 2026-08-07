@@ -94,7 +94,7 @@ class EoBase : public caf::event_based_actor, public utils::CrtpBase<Derived>
     template <typename Duration, typename Msg>
     void delaySendTo(EoAddress target, Duration d, Msg &&msg)
     {
-        this->mail(std::forward<Msg>(msg)).schedule(d).send(target);
+        this->mail(std::forward<Msg>(msg)).delay(d).send(target);
     }
 
     template <typename Msg>

@@ -15,7 +15,6 @@ class SessionDispatcher : public fw::EoBase<SessionDispatcher>
   public:
     explicit SessionDispatcher(fw::EoConfig &cfg, fw::EoAddress accessGatewayAddr);
 
-    void handle(common::message::AiChatReq req);
     void handle(const common::message::TempConfig &msg);
 
     template <typename Msg>
@@ -25,7 +24,6 @@ class SessionDispatcher : public fw::EoBase<SessionDispatcher>
     void init() override
     {
         onMsg<common::message::TempConfig>();
-        onMsg<common::message::AiChatReq>();
         onMsg<common::message::AiChatResp>();
         onMsg<common::message::AiChatConfigResp>();
         onMsg<common::message::TaskConfigReq>();

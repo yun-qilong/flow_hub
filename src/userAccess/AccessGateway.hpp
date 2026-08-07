@@ -20,8 +20,8 @@ class AccessGateway : public fw::EoBase<AccessGateway>
     void handle(const common::message::TaskDeleteReq &req);
     void handle(common::message::TaskDeleteResp resp);
 
-    void handle(common::message::AiChatReq req);
-    void handle(common::message::AiChatResp resp);
+    void handle(common::message::AiAgoraChatReq req);
+    void handle(common::message::AiAgoraChatResp resp);
     void handle(common::message::TaskConfigResp resp);
     void handle(const common::message::TempConfig &msg);
 
@@ -32,8 +32,8 @@ class AccessGateway : public fw::EoBase<AccessGateway>
         onMsg<common::message::TaskCreateResp>();
         onMsg<common::message::TaskDeleteReq>();
         onMsg<common::message::TaskDeleteResp>();
-        onMsg<common::message::AiChatReq>();
-        onMsg<common::message::AiChatResp>();
+        onMsg<common::message::AiAgoraChatReq>();
+        onMsg<common::message::AiAgoraChatResp>();
         onMsg<common::message::TaskConfigResp>();
         onMsg<common::message::TempConfig>();
     }

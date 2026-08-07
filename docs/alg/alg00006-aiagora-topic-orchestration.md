@@ -11,7 +11,7 @@
 
 ## 术语
 
-- **`topicBaseJson`**：编排器在 Session Context 中持有的**累积对话历史存储**（静态缓冲，容量受 Context 约束，见 alg00005/contexts）。跨话题、跨轮次持续追加——user 驱动消息（辩论模式带 `topic:` / `judge:` 前缀，单 AI 为原始内容）与 assistant 回答（辩论模式为合并串，单 AI 为原始回答）交替累积。§2 的容量检查针对此缓冲。
+- **`topicBaseJson`**：编排器在 Session Context 中持有的**累积对话历史存储**（静态缓冲，容量受 Context 约束，见 alg00005/contexts）。跨话题、跨轮次持续追加——user 驱动消息（辩论模式带 `topic:` / `judge:` 前缀，单 AI 为原始内容）与 assistant 回答（辩论模式为合并串，单 AI 为原始回答）交替累积。§2 的容量检查针对此缓冲。已用长度由 `topicBaseJsonSize` 维护（初始 `2`，即空数组文本 `[]`），追加时不解析全量，仅按字节在 `]` 前插入新元素。
 - **`messagesJson`**：每次实际发送的**请求载荷**（`AiChatReq.messagesJson` 字段），是 `topicBaseJson` 当前完整内容的 JSON 数组。`messagesJson = topicBaseJson` 表示"载荷直接取累积历史的当前状态"——追加最新驱动消息后，将**全量历史**一次发出，而非增量。**例外**：裁判的载荷单独构造，仅含当前话题 topic + 当轮回答，不携带历史（见 7.1）。
 
 ## 1. Entry & State Check
@@ -80,7 +80,7 @@ Router 遍历 `busTaskIds`，复制消息并将副本改写为单元素列表后
 
 ## 5. Collect Responses
 
-设置 `pendingReplies` bitset（低 `aiCount` 位置 1），启动超时计时器。
+设置 `pendingReplies` bitset（低 `aiCount` 位置 1）。
 
 每收到 `AiChatResp`：
 - 校验 `aiIndex` 在合法范围（0 ~ `aiCount-1`）
@@ -88,6 +88,10 @@ Router 遍历 `busTaskIds`，复制消息并将副本改写为单元素列表后
 - 清除 `pendingReplies` 对应位
 - 将 `content` 缓存到 `lastRoundResponses[aiIndex]`
 - 全部位清零 → 本轮收集完成
+
+晚到/重复响应处理：`AiChatResp` 到达时仅当处于等待态且对应 pending 位仍置位才处理；否则视为晚到响应，忽略（状态已复位）。
+
+单 AI 模式（`aiCount=1`）仅使用 `pendingReplies` bit0，收集完成即处理，不依赖 `lastRoundResponses` 缓存。
 
 **编排器保证每个 AI 都不缺答或失败**：任一 AI 超时未答，或收到 `success=false`（AiChatBus 检测到 API 失败，见 alg00011）→ **本轮辩论失败**，回复 `AiAgoraChatResp{isComplete=true, errorCode=NetworkTimeout}`，结束当前 topic（不拼接、不进下一轮、不调用裁判）。
 

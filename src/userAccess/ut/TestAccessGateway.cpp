@@ -31,10 +31,10 @@ class TestAccessGateway : public fw::EoTestBase
 
     void sendBusinessResp(common::GTID sessionTaskId)
     {
-        auto resp = AiChatResp{};
+        auto resp = AiAgoraChatResp{};
         fillDefaultHead(resp);
         resp.head.sessionTaskId = sessionTaskId;
-        resp.content = "reply";
+        resp.responses = "reply";
         sendToMe(std::move(resp));
     }
 
@@ -74,9 +74,9 @@ TEST_F(TestAccessGateway, CheckHandleTempConfig_Tag1SetsSessionMgr)
 
 TEST_F(TestAccessGateway, CheckHandleTempConfig_Tag2SetsSessionDispatcher)
 {
-    auto req = AiChatReq{};
+    auto req = AiAgoraChatReq{};
     sendToMe(std::move(req));
-    checkOutput<AiChatReq>(sessionDispatcher_, [](AiChatReq &) {});
+    checkOutput<AiAgoraChatReq>(sessionDispatcher_, [](AiAgoraChatReq &) {});
 }
 
 TEST_F(TestAccessGateway, CheckHandleTempConfig_UnknownTagNoOp)
@@ -106,13 +106,13 @@ TEST_F(TestAccessGateway, CheckHandleTaskDeleteReq_ForwardsToSessionMgr)
     checkOutput<TaskDeleteReq>(sessionMgr_, [](TaskDeleteReq &) {});
 }
 
-TEST_F(TestAccessGateway, CheckHandleAiChatReq_ForwardsToSessionDispatcher)
+TEST_F(TestAccessGateway, CheckHandleAiAgoraChatReq_ForwardsToSessionDispatcher)
 {
-    auto req = AiChatReq{};
-    req.messagesJson = "hello";
+    auto req = AiAgoraChatReq{};
+    req.content = "hello";
     sendToMe(std::move(req));
-    checkOutput<AiChatReq>(sessionDispatcher_,
-                           [](AiChatReq &msg) { EXPECT_EQ(msg.messagesJson, "hello"); });
+    checkOutput<AiAgoraChatReq>(sessionDispatcher_,
+                                [](AiAgoraChatReq &msg) { EXPECT_EQ(msg.content, "hello"); });
 }
 
 TEST_F(TestAccessGateway, CheckHandleTaskCreateResp_SuccessWritesMappingAndRoutes)
@@ -122,7 +122,8 @@ TEST_F(TestAccessGateway, CheckHandleTaskCreateResp_SuccessWritesMappingAndRoute
     writeMapping(kGtid);
 
     sendBusinessResp(kGtid);
-    checkOutput<AiChatResp>(cliAdapter_, [](AiChatResp &msg) { EXPECT_EQ(msg.content, "reply"); });
+    checkOutput<AiAgoraChatResp>(cliAdapter_,
+                                 [](AiAgoraChatResp &msg) { EXPECT_EQ(msg.responses, "reply"); });
 }
 
 TEST_F(TestAccessGateway, CheckHandleTaskCreateResp_FailureNoMapping)
@@ -142,7 +143,7 @@ TEST_F(TestAccessGateway, CheckHandleTaskCreateResp_FailureNoMapping)
     sendBusinessResp(kGtid);
 }
 
-TEST_F(TestAccessGateway, CheckHandleAiChatResp_NoMappingDrops)
+TEST_F(TestAccessGateway, CheckHandleAiAgoraChatResp_NoMappingDrops)
 {
     EXPECT_LOG(LogLevel::ERR, 1);
 
@@ -175,7 +176,7 @@ TEST_F(TestAccessGateway, CheckMapping_SameGtidOverwritesToNewAdapter)
     writeMappingTo(0x7123, adapterB);
 
     sendBusinessResp(0x7123);
-    checkOutput<AiChatResp>(adapterB, [](AiChatResp &) {});
+    checkOutput<AiAgoraChatResp>(adapterB, [](AiAgoraChatResp &) {});
 }
 
 TEST_F(TestAccessGateway, CheckMapping_IndexBoundaryLow)
@@ -183,7 +184,7 @@ TEST_F(TestAccessGateway, CheckMapping_IndexBoundaryLow)
     writeMapping(0x0000);
 
     sendBusinessResp(0x0000);
-    checkOutput<AiChatResp>(cliAdapter_, [](AiChatResp &) {});
+    checkOutput<AiAgoraChatResp>(cliAdapter_, [](AiAgoraChatResp &) {});
 }
 
 TEST_F(TestAccessGateway, CheckMapping_IndexBoundaryHigh)
@@ -191,7 +192,7 @@ TEST_F(TestAccessGateway, CheckMapping_IndexBoundaryHigh)
     writeMapping(0x0FFF);
 
     sendBusinessResp(0x0FFF);
-    checkOutput<AiChatResp>(cliAdapter_, [](AiChatResp &) {});
+    checkOutput<AiAgoraChatResp>(cliAdapter_, [](AiAgoraChatResp &) {});
 }
 
 TEST_F(TestAccessGateway, CheckMapping_HighBitsMaskedToSameSlot)

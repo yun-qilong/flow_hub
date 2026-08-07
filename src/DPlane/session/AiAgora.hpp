@@ -49,6 +49,8 @@ class AiAgora : public fw::EoBase<AiAgora>
     void handle(const common::message::TempConfig &msg);
     void handle(const common::message::TaskConfigReq &req);
     void handle(const common::message::AiChatConfigResp &resp);
+    void handle(const common::message::AiAgoraChatReq &req);
+    void handle(const common::message::AiChatResp &resp);
 
   protected:
     void init() override
@@ -56,6 +58,8 @@ class AiAgora : public fw::EoBase<AiAgora>
         onMsg<common::message::TempConfig>();
         onMsg<common::message::TaskConfigReq>();
         onMsg<common::message::AiChatConfigResp>();
+        onMsg<common::message::AiAgoraChatReq>();
+        onMsg<common::message::AiChatResp>();
     }
 
   private:
@@ -67,6 +71,13 @@ class AiAgora : public fw::EoBase<AiAgora>
     static constexpr uint8_t kStateDead = 5;
 
     static constexpr uint16_t kJudgePendingBit = 0x8000;
+
+    static constexpr uint8_t kErrorNoError = 0;
+    static constexpr uint8_t kErrorNetworkTimeout = 1;
+    static constexpr uint8_t kErrorContextFullAtStart = 2;
+    static constexpr uint8_t kErrorContextFullMidRound = 3;
+    static constexpr uint8_t kErrorInvalidState = 5;
+    static constexpr uint8_t kEndReasonNoJudge = 1;
 
     using ContextType = common::context::AiAgoraContext;
 
@@ -81,6 +92,19 @@ class AiAgora : public fw::EoBase<AiAgora>
                                 const std::vector<common::GTID> &busTaskIds);
     void recycleBusTasks(const common::message::UserHead &head, ContextType &ctx);
     static void clearPendingBit(ContextType &ctx, uint8_t aiIndex);
+    void processChatRequest(ContextType &ctx, const common::message::AiAgoraChatReq &req);
+    void sendAiChatRequest(ContextType &ctx, const common::message::AiAgoraChatReq &req);
+    void onAiChatResp(ContextType &ctx, const common::message::AiChatResp &resp);
+    void completeChat(ContextType &ctx, const common::message::UserHead &head,
+                      const std::string &content);
+    void failChat(ContextType &ctx, const common::message::UserHead &head, uint8_t errorCode);
+    static bool appendTopicMessage(ContextType &ctx, const std::string &item);
+    static std::string buildTopicMessage(const std::string &role, const std::string &content);
+    static common::message::AiAgoraChatResp buildChatResp(const common::message::UserHead &head,
+                                                          bool isComplete, bool hasResponses,
+                                                          uint8_t endReason, uint8_t errorCode,
+                                                          uint8_t currentState,
+                                                          const std::string &responses);
     static utils::Result<ParsedTaskConfig> validateAndExtractConfig(const std::string &payload);
     static std::vector<common::TaskType> buildTaskTypes(const ParsedTaskConfig &cfg);
     static uint16_t buildPendingBits(const ParsedTaskConfig &cfg);

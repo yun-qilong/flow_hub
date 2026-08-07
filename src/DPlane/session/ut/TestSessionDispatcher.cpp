@@ -58,31 +58,6 @@ class TestSessionDispatcher : public fw::EoTestBase
     Stub aiAgora_;
 };
 
-TEST_F(TestSessionDispatcher, CheckHandleAiChatReq_DelegateToRouter)
-{
-    EXPECT_LOG(LogLevel::DBG, 1);
-
-    auto req = AiChatReq{};
-    fillDefaultHead(req);
-    req.messagesJson = "test";
-    sendToMe(std::move(req));
-
-    checkOutput<AiChatReq>(router_, [&](AiChatReq &msg) { EXPECT_EQ(msg.messagesJson, "test"); });
-}
-
-TEST_F(TestSessionDispatcher, CheckHandleAiChatReq_RouterNotSet)
-{
-    restartWithoutRouter();
-
-    EXPECT_LOG(LogLevel::DBG, 1);
-    EXPECT_LOG(LogLevel::ERR, 1);
-
-    auto req = AiChatReq{};
-    fillDefaultHead(req);
-    req.messagesJson = "should_drop";
-    sendToMe(std::move(req));
-}
-
 TEST_F(TestSessionDispatcher, CheckHandleAiChatResp_DelegateToAiAgora)
 {
     EXPECT_LOG(LogLevel::DBG, 1);
