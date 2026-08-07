@@ -9,6 +9,7 @@ using TaskDeleteReq = common::message::TaskDeleteReq;
 using TaskDeleteResp = common::message::TaskDeleteResp;
 using AiChatReq = common::message::AiChatReq;
 using AiChatResp = common::message::AiChatResp;
+using TaskConfigResp = common::message::TaskConfigResp;
 using TempConfig = common::message::TempConfig;
 
 AccessGateway::AccessGateway(fw::EoConfig &cfg, const fw::EoAddress &cliAdapter)
@@ -62,6 +63,21 @@ void AccessGateway::handle(AiChatResp resp)
     else
     {
         LG_ERR("no adapter mapped for sessionTaskId=0x%x, dropping AiChatResp",
+               resp.head.sessionTaskId);
+    }
+}
+
+void AccessGateway::handle(TaskConfigResp resp)
+{
+    auto idx = static_cast<size_t>(resp.head.sessionTaskId & 0x0FFF);
+    auto adapter = gtidToAdapter_.at(idx);
+    if (adapter)
+    {
+        delegateTo(adapter, std::move(resp));
+    }
+    else
+    {
+        LG_ERR("no adapter mapped for sessionTaskId=0x%x, dropping TaskConfigResp",
                resp.head.sessionTaskId);
     }
 }

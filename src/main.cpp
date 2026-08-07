@@ -18,6 +18,7 @@
 #include <chrono>
 #include <cstdlib>
 #include <iostream>
+#include <memory>
 #include <string>
 
 using TaskPool = common::TaskPool;
@@ -64,10 +65,11 @@ void buildSystem(fw::EoEnv &env, TaskPool &pool, const ApiConfig &cfg,
 
     auto sessionDispatcher = env.createEo<DPlane::session::SessionDispatcher>(accessGateway);
     auto sessionMgr = env.createEo<CPlane::SessionMgr>(pool, accessGateway);
-    env.createEo<DPlane::session::AiAgora>(sessionDispatcher);
-
     auto businessMgr = env.createEo<CPlane::BusinessMgr>(sessionMgr);
     auto router = env.createEo<DPlane::business::Router>(businessMgr, sessionDispatcher);
+    env.createEo<DPlane::session::AiAgora>(sessionDispatcher, sessionMgr, router, accessGateway,
+                                           pool);
+
     auto aiChatBus = env.createEo<DPlane::business::AiChatBus<TaskType::AiChat>>(
         pool, sessionDispatcher, businessMgr, router);
 
@@ -83,14 +85,14 @@ void buildSystem(fw::EoEnv &env, TaskPool &pool, const ApiConfig &cfg,
 int main()
 {
     fw::EoEnv env;
-    TaskPool pool;
+    auto pool = std::make_unique<TaskPool>();
 
     utils::gSysLog() = utils::createSysLog();
 
     auto cfg = loadApiConfig();
 
     userAccess::CliAdapter cliAdapter(env.system());
-    buildSystem(env, pool, cfg, cliAdapter);
+    buildSystem(env, *pool, cfg, cliAdapter);
 
     printBanner();
     cliAdapter.showPrompt();

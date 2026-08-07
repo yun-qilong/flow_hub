@@ -168,6 +168,7 @@
 |------|------|--------|
 | `head` | `UserHead` | — |
 | `isSuccess` | `bool` | `true` / `false` |
+| `aiIndex` | `AiIndex` | 0~7 / `kJudgeIndex` |
 
 ---
 

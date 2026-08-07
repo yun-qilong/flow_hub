@@ -4,5 +4,5 @@ flowhub_add_ut(TestSessionDispatcher
 )
 flowhub_add_ut(TestAiAgora
     SOURCES TestAiAgora.cpp ../AiAgora.cpp
-    EXTRA_LIBS GTest::gmock_main
+    EXTRA_LIBS GTest::gmock_main commonLib utilsLib
 )

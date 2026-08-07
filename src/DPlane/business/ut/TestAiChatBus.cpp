@@ -100,7 +100,11 @@ TEST_F(TestAiChatBus, CheckHandleAiChatConfigReq_Success)
     sendToMe(makeConfigReq(std::string(kValidPayload)));
 
     checkOutput<AiChatConfigResp>(sessionDispatcherStub_,
-                                  [](AiChatConfigResp &msg) { EXPECT_TRUE(msg.isSuccess); });
+                                  [](AiChatConfigResp &msg)
+                                  {
+                                      EXPECT_TRUE(msg.isSuccess);
+                                      EXPECT_EQ(msg.aiIndex, 0);
+                                  });
 
     withCtx(
         [](AiChatContext &ctx)

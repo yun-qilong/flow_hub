@@ -51,7 +51,7 @@ class AiChatBus : public fw::EoBase<AiChatBus<T>>
   private:
     bool isValidAiIndex(uint8_t aiIndex) const;
     bool applyConfig(ContextType &ctx, const common::message::AiChatConfigReq &req);
-    void sendConfigResp(const common::message::UserHead &head, bool isSuccess);
+    void sendConfigResp(const common::message::UserHead &head, uint8_t aiIndex, bool isSuccess);
     void sendChatResp(const common::message::UserHead &head, bool success,
                       const std::string &content, uint8_t aiIndex);
     void sendChatToService(const ContextType &ctx, const std::string &messagesJson,

@@ -131,7 +131,27 @@ TaskConfigResp{isSuccess=true, estimatedTopicCount}
 
 ## 5. 等待确认并回复
 
-设置 `pendingReplies` bitset，启动超时。每收到成功响应清除对应位。全部成功回复 `TaskConfigResp{isSuccess=true}`。超时或任一失败则回收全部 BusTask GTID，回复 `TaskConfigResp{isSuccess=false}`。
+设置 `pendingReplies` bitset，启动超时。每收到成功响应清除对应位。全部成功回复 `TaskConfigResp{isSuccess=true}`。
+
+### 5.1 失败处理
+
+配置失败时编排器只回收本次已申请的 BusTask，保留 SessionTask（state 回 `Unconfigured`），回复 `TaskConfigResp{isSuccess=false}`。前端据此决定下一步：
+
+- 重新发起 Config：直接再发 `TaskConfigReq`（重新申请 BusTask GTID）。
+- 删除任务：发 `TaskDeleteReq`（alg00008），重新执行 TaskCreate + TaskConfig。
+
+回滚动作：编排器发送 `BusTaskDeleteReq`（`head.busTaskIds` = 已申请的全部 GTID，未申请的槽位为 `kInvalidGtid`，SessionMgr 跳过）回收本次已申请的下挂 BusTask。
+
+各失败路径的回滚动作：
+
+| 失败点 | 回收 BusTask | SessionTask |
+|--------|-------------|-------------|
+| ① 校验失败 | —（未申请） | 保留 |
+| ② BusTaskCreate 失败 | —（SessionMgr 已原子回收） | 保留 |
+| ③ 超时（BusTaskCreateResp 未回） | ⚠️ 无法回收（GTID 未知） | 保留 |
+| ④ 任一 AiChatConfigResp 失败 | ✅ `BusTaskDeleteReq` | 保留 |
+
+> 超时路径的 BusTask 可能已在 SessionMgr 分配但响应丢失，编排器无法取得 GTID，存在 BusTask 槽位泄漏。根治需 SessionMgr 按 SessionTask 维护下挂 BusTask 列表（超出本算法范围，见 alg00007）。
 
 ## 引用
 

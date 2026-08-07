@@ -115,6 +115,10 @@ void SessionMgr::recycleBusTasks(const std::vector<common::GTID> &gtids)
 {
     for (auto gtid : gtids)
     {
+        if (gtid == common::kInvalidGtid)
+        {
+            continue;
+        }
         pool_.deallocate(gtid);
     }
 }

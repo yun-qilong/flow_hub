@@ -828,7 +828,10 @@ def generate_context_hpp(defn: dict,
         if ftype == "__padding__":
             continue
         if default is not None:
-            out.append(f"        {fname} = {default};")
+            if ARRAY_RE.match(ftype):
+                out.append(f"        {fname}.fill({default});")
+            else:
+                out.append(f"        {fname} = {default};")
         # 自定义类型（.mt 定义的 struct/context），调其 clear() 实现级联
         elif known_types and ftype in known_types:
             out.append(f"        {fname}.clear();")

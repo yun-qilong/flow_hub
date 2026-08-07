@@ -4,7 +4,7 @@
 
 ---
 
-## AiAgoraSessionContext（Session 层）
+## AiAgoraContext（Session 层）
 
 编排器（AiAgora）维护的 Session 级上下文。一个 Session Task 对应一份。
 

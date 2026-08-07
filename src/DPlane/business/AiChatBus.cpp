@@ -100,9 +100,9 @@ bool AiChatBus<T>::applyConfig(ContextType &ctx, const AiChatConfigReq &req)
 }
 
 template <common::TaskType T>
-void AiChatBus<T>::sendConfigResp(const UserHead &head, bool isSuccess)
+void AiChatBus<T>::sendConfigResp(const UserHead &head, uint8_t aiIndex, bool isSuccess)
 {
-    this->sendTo(sessionDispatcherAddr_, AiChatConfigResp{head, isSuccess});
+    this->sendTo(sessionDispatcherAddr_, AiChatConfigResp{head, isSuccess, aiIndex});
 }
 
 template <common::TaskType T>
@@ -113,13 +113,13 @@ void AiChatBus<T>::handle(const AiChatConfigReq &req)
             [&](ContextType &ctx)
             {
                 bool isSuccess = isValidAiIndex(req.aiIndex) and applyConfig(ctx, req);
-                sendConfigResp(req.head, isSuccess);
+                sendConfigResp(req.head, ctx.aiIndex, isSuccess);
             },
             [&]()
             {
                 LG_WRN("AiChatBus: context not found, busTaskIds.size=%zu, gtid=%u",
                        req.head.busTaskIds.size(), static_cast<unsigned>(firstBusTaskId(req.head)));
-                sendConfigResp(req.head, false);
+                sendConfigResp(req.head, req.aiIndex, false);
             });
 }
 
