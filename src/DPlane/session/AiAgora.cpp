@@ -407,11 +407,36 @@ void AiAgora::processChatRequest(AiAgoraContext &ctx, const AiAgoraChatReq &req)
     sendAiChatRequest(ctx, req);
 }
 
+std::vector<common::GTID> AiAgora::collectActiveDebateIds(AiAgoraContext &ctx)
+{
+    std::vector<common::GTID> targets;
+    for (uint8_t i = 0; i < 8; ++i)
+    {
+        auto gtid = ctx.debateTaskIds.at(i);
+        if (gtid != common::kInvalidGtid)
+        {
+            targets.push_back(gtid);
+            ctx.pendingReplies |= static_cast<uint16_t>(1U << i);
+        }
+    }
+    return targets;
+}
+
 void AiAgora::sendAiChatRequest(AiAgoraContext &ctx, const AiAgoraChatReq &req)
 {
+    auto targets = collectActiveDebateIds(ctx);
+    if (targets.empty())
+    {
+        ctx.pendingReplies = 0;
+        ctx.state = kStateWaitingForTopic;
+        sendTo(accessGatewayAddr_,
+               buildChatResp(req.head, true, false, 0, kErrorNoBusTask, ctx.state, ""));
+        return;
+    }
     auto item = buildTopicMessage("user", req.content);
     if (not appendTopicMessage(ctx, item))
     {
+        ctx.pendingReplies = 0;
         ctx.state = kStateWaitingForTopic;
         sendTo(accessGatewayAddr_,
                buildChatResp(req.head, true, false, 0, kErrorContextFullAtStart, ctx.state, ""));
@@ -421,17 +446,7 @@ void AiAgora::sendAiChatRequest(AiAgoraContext &ctx, const AiAgoraChatReq &req)
                                     ctx.topicBaseJsonSize);
     AiChatReq aiReq;
     aiReq.head = req.head;
-    aiReq.head.busTaskIds.clear();
-    ctx.pendingReplies = 0;
-    for (uint8_t i = 0; i < 8; ++i)
-    {
-        auto gtid = ctx.debateTaskIds.at(i);
-        if (gtid != common::kInvalidGtid)
-        {
-            aiReq.head.busTaskIds.push_back(gtid);
-            ctx.pendingReplies |= static_cast<uint16_t>(1U << i);
-        }
-    }
+    aiReq.head.busTaskIds = std::move(targets);
     aiReq.messagesJson = std::move(messagesJson);
     sendTo(routerAddr_, std::move(aiReq));
 }

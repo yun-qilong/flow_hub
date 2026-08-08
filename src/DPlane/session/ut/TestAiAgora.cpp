@@ -138,6 +138,31 @@ TEST_F(TestAiAgora, CheckHandleTaskConfigReq_Success)
                      []() { FAIL() << "context missing"; });
 }
 
+TEST_F(TestAiAgora, CheckHandleTaskConfigReq_BusTaskCreateTimeout)
+{
+    auto sessionTaskId = allocateSession();
+    ASSERT_NE(sessionTaskId, common::kInvalidGtid);
+
+    sendToMe(TaskConfigReq{UserHead{sessionTaskId, {}},
+                           R"({"aiCount":1,"hasJudge":false,"maxRounds":5,)"
+                           R"("maxResponseLength":500,"timeoutMs":5,"configs":)"
+                           R"([{"apiUrl":"u","apiKey":"k","model":"m",)"
+                           R"("systemPrompt":"sys","temperature":0.7}]})"});
+
+    checkOutput<BusTaskCreateReq>(sessionMgr_, [](BusTaskCreateReq &) {});
+
+    checkOutput<TaskConfigResp>(accessGateway_,
+                                [&](TaskConfigResp &resp)
+                                {
+                                    EXPECT_EQ(resp.head.sessionTaskId, sessionTaskId);
+                                    EXPECT_FALSE(resp.isSuccess);
+                                });
+
+    pool_.getContext<common::context::AiAgoraContext>(sessionTaskId)
+        .useOrFailed([](common::context::AiAgoraContext &ctx) { EXPECT_EQ(ctx.state, 0); },
+                     []() { FAIL() << "context missing"; });
+}
+
 TEST_F(TestAiAgora, CheckHandleTaskConfigReq_InvalidPayload)
 {
     auto sessionTaskId = allocateSession();
@@ -387,6 +412,157 @@ TEST_F(TestAiAgora, CheckHandleAiAgoraChatReq_SuccessFalse)
                                  });
 }
 
+TEST_F(TestAiAgora, CheckHandleAiAgoraChatReq_NoBusTask)
+{
+    constexpr uint8_t kErrorNoBusTask = 4;
+
+    auto sessionTaskId = allocateSession();
+    ASSERT_NE(sessionTaskId, common::kInvalidGtid);
+    runSuccessFlow(sessionTaskId);
+
+    pool_.getContext<common::context::AiAgoraContext>(sessionTaskId)
+        .useOrFailed(
+            [](common::context::AiAgoraContext &ctx)
+            {
+                for (auto &gtid : ctx.debateTaskIds)
+                {
+                    gtid = common::kInvalidGtid;
+                }
+            },
+            []() { FAIL() << "context missing"; });
+
+    sendToMe(AiAgoraChatReq{UserHead{sessionTaskId, {}}, "hello"});
+
+    checkOutput<AiAgoraChatResp>(accessGateway_,
+                                 [&](AiAgoraChatResp &resp)
+                                 {
+                                     EXPECT_EQ(resp.head.sessionTaskId, sessionTaskId);
+                                     EXPECT_TRUE(resp.isComplete);
+                                     EXPECT_FALSE(resp.hasResponses);
+                                     EXPECT_EQ(resp.errorCode, kErrorNoBusTask);
+                                 });
+
+    pool_.getContext<common::context::AiAgoraContext>(sessionTaskId)
+        .useOrFailed(
+            [](common::context::AiAgoraContext &ctx)
+            {
+                EXPECT_EQ(ctx.state, 2);
+                EXPECT_EQ(ctx.pendingReplies, 0);
+                EXPECT_EQ(ctx.topicBaseJsonSize, 2U);
+            },
+            []() { FAIL() << "context missing"; });
+}
+
+TEST_F(TestAiAgora, CheckHandleAiAgoraChatReq_MultiRoundAccumulates)
+{
+    auto sessionTaskId = allocateSession();
+    ASSERT_NE(sessionTaskId, common::kInvalidGtid);
+    runSuccessFlow(sessionTaskId);
+
+    for (uint8_t round = 1; round <= 3; ++round)
+    {
+        auto content = "你好第" + std::to_string(round) + "轮 😀";
+        sendToMe(AiAgoraChatReq{UserHead{sessionTaskId, {}}, content});
+
+        checkOutputAndReply<AiChatReq, AiChatResp>(
+            router_,
+            [&](AiChatReq &req)
+            {
+                auto parsed = nlohmann::json::parse(req.messagesJson);
+                ASSERT_TRUE(parsed.is_array());
+                EXPECT_EQ(parsed.size(), static_cast<size_t>(2 * round - 1));
+                auto &last = parsed.at(parsed.size() - 1);
+                EXPECT_EQ(last.at("role").get<std::string>(), "user");
+                EXPECT_EQ(last.at("content").get<std::string>(), content);
+            },
+            [&]()
+            {
+                auto head = UserHead{};
+                head.sessionTaskId = sessionTaskId;
+                head.busTaskIds = {kBusTaskId};
+                return AiChatResp{head, true, 0, "回复" + std::to_string(round)};
+            }());
+
+        checkOutput<AiAgoraChatResp>(accessGateway_,
+                                     [&](AiAgoraChatResp &resp)
+                                     {
+                                         EXPECT_TRUE(resp.isComplete);
+                                         EXPECT_EQ(resp.errorCode, 0);
+                                         EXPECT_EQ(resp.responses, "回复" + std::to_string(round));
+                                     });
+    }
+
+    pool_.getContext<common::context::AiAgoraContext>(sessionTaskId)
+        .useOrFailed(
+            [](common::context::AiAgoraContext &ctx)
+            {
+                EXPECT_EQ(ctx.state, 2);
+                auto json = std::string(reinterpret_cast<const char *>(ctx.topicBaseJson.data()),
+                                        ctx.topicBaseJsonSize);
+                auto parsed = nlohmann::json::parse(json);
+                EXPECT_EQ(parsed.size(), 6u);
+            },
+            []() { FAIL() << "context missing"; });
+}
+
+TEST_F(TestAiAgora, CheckHandleAiAgoraChatReq_OutOfRangeAiIndexIgnored)
+{
+    auto sessionTaskId = allocateSession();
+    ASSERT_NE(sessionTaskId, common::kInvalidGtid);
+    runSuccessFlow(sessionTaskId);
+
+    sendToMe(AiAgoraChatReq{UserHead{sessionTaskId, {}}, "hello"});
+    checkOutput<AiChatReq>(router_, [](AiChatReq &) {});
+
+    auto head = UserHead{};
+    head.sessionTaskId = sessionTaskId;
+    head.busTaskIds = {kBusTaskId};
+
+    EXPECT_LOG(LogLevel::WRN, 1);
+    sendToMeFrom(router_, testee_, AiChatResp{head, true, 8, "bad"});
+
+    pool_.getContext<common::context::AiAgoraContext>(sessionTaskId)
+        .useOrFailed([](common::context::AiAgoraContext &ctx) { EXPECT_EQ(ctx.pendingReplies, 1); },
+                     []() { FAIL() << "context missing"; });
+
+    sendToMeFrom(router_, testee_, AiChatResp{head, true, 0, "ok"});
+
+    checkOutput<AiAgoraChatResp>(accessGateway_,
+                                 [&](AiAgoraChatResp &resp)
+                                 {
+                                     EXPECT_TRUE(resp.isComplete);
+                                     EXPECT_EQ(resp.responses, "ok");
+                                 });
+}
+
+TEST_F(TestAiAgora, CheckHandleAiAgoraChatReq_WhileConfiguringRejected)
+{
+    constexpr uint8_t kConfiguringState = 1;
+
+    auto sessionTaskId = allocateSession();
+    ASSERT_NE(sessionTaskId, common::kInvalidGtid);
+
+    pool_.getContext<common::context::AiAgoraContext>(sessionTaskId)
+        .useOrFailed([](common::context::AiAgoraContext &ctx) { ctx.state = kConfiguringState; },
+                     []() { FAIL() << "context missing"; });
+
+    EXPECT_LOG(LogLevel::WRN, 1);
+    sendToMe(AiAgoraChatReq{UserHead{sessionTaskId, {}}, "hello"});
+
+    checkOutput<AiAgoraChatResp>(accessGateway_,
+                                 [&](AiAgoraChatResp &resp)
+                                 {
+                                     EXPECT_EQ(resp.head.sessionTaskId, sessionTaskId);
+                                     EXPECT_TRUE(resp.isComplete);
+                                     EXPECT_FALSE(resp.hasResponses);
+                                     EXPECT_EQ(resp.errorCode, 5);
+                                 });
+
+    pool_.getContext<common::context::AiAgoraContext>(sessionTaskId)
+        .useOrFailed([](common::context::AiAgoraContext &ctx) { EXPECT_EQ(ctx.state, 1); },
+                     []() { FAIL() << "context missing"; });
+}
+
 TEST_F(TestAiAgora, CheckHandleAiAgoraChatReq_DuplicateRespIgnored)
 {
     auto sessionTaskId = allocateSession();
@@ -578,6 +754,34 @@ TEST_F(TestAiAgora, CheckHandleTaskDeleteReq_Cascade)
             head.sessionTaskId = sessionTaskId;
             return BusTaskDeleteResp{head, true};
         }());
+    checkOutput<TaskDeleteReq>(sessionMgr_, [&](TaskDeleteReq &req)
+                               { EXPECT_EQ(req.head.sessionTaskId, sessionTaskId); });
+    checkOutput<TaskDeleteResp>(accessGateway_,
+                                [&](TaskDeleteResp &resp)
+                                {
+                                    EXPECT_EQ(resp.head.sessionTaskId, sessionTaskId);
+                                    EXPECT_TRUE(resp.isSuccess);
+                                });
+}
+
+TEST_F(TestAiAgora, CheckHandleTaskDeleteReq_BusTaskDeleteTimeout)
+{
+    auto sessionTaskId = allocateSession();
+    ASSERT_NE(sessionTaskId, common::kInvalidGtid);
+
+    sendToMe(TaskConfigReq{UserHead{sessionTaskId, {}},
+                           R"({"aiCount":1,"hasJudge":false,"maxRounds":5,)"
+                           R"("maxResponseLength":500,"timeoutMs":5,"configs":)"
+                           R"([{"apiUrl":"u","apiKey":"k","model":"m",)"
+                           R"("systemPrompt":"sys","temperature":0.7}]})"});
+    replyBusTaskCreate(sessionTaskId, true);
+    checkOutput<AiChatConfigReq>(router_, [](AiChatConfigReq &) {});
+    replyAiChatConfig(sessionTaskId, 0, true);
+    checkOutput<TaskConfigResp>(accessGateway_, [](TaskConfigResp &) {});
+
+    sendToMe(TaskDeleteReq{UserHead{sessionTaskId, {}}});
+    checkOutput<BusTaskDeleteReq>(sessionMgr_, [](BusTaskDeleteReq &) {});
+
     checkOutput<TaskDeleteReq>(sessionMgr_, [&](TaskDeleteReq &req)
                                { EXPECT_EQ(req.head.sessionTaskId, sessionTaskId); });
     checkOutput<TaskDeleteResp>(accessGateway_,

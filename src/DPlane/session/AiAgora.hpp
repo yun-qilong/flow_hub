@@ -80,6 +80,7 @@ class AiAgora : public fw::EoBase<AiAgora>
     static constexpr uint8_t kErrorNetworkTimeout = 1;
     static constexpr uint8_t kErrorContextFullAtStart = 2;
     static constexpr uint8_t kErrorContextFullMidRound = 3;
+    static constexpr uint8_t kErrorNoBusTask = 4;
     static constexpr uint8_t kErrorInvalidState = 5;
     static constexpr uint8_t kEndReasonNoJudge = 1;
 
@@ -99,6 +100,7 @@ class AiAgora : public fw::EoBase<AiAgora>
     static void clearPendingBit(ContextType &ctx, uint8_t aiIndex);
     void processChatRequest(ContextType &ctx, const common::message::AiAgoraChatReq &req);
     void sendAiChatRequest(ContextType &ctx, const common::message::AiAgoraChatReq &req);
+    static std::vector<common::GTID> collectActiveDebateIds(ContextType &ctx);
     void onAiChatResp(ContextType &ctx, const common::message::AiChatResp &resp);
     void completeChat(ContextType &ctx, const common::message::UserHead &head,
                       const std::string &content);
