@@ -1,106 +1,63 @@
-# Flow Hub
+# FlowHub
 
-> 一个消息驱动的编排框架。协议、设备、AI——都是被调度的能力单元。
+**C++17 消息驱动的确定性编排框架** —— 控制面/数据面分离、无状态执行单元、静态内存、消息按 ID O(1) 路由。
 
-[![CI](https://img.shields.io/github/actions/workflow/status/yun-qilong/flow_hub/ci.yml?branch=main)](https://github.com/yun-qilong/flow_hub/actions)
-[![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-[![C++17](https://img.shields.io/badge/C%2B%2B-17-blue.svg)](https://en.cppreference.com/w/cpp/17)
+基于 C++17 与 CAF（C++ Actor Framework）的确定性任务编排框架：FlowHub 自身代码路径全静态内存、无锁并发、任务状态随 Context 流转。覆盖架构、编码、测试、CI 与文档——24 篇 ADR 决策记录、399 个 ctest 用例全绿、Gerrit + Jenkins CI 门禁。
 
----
+## 核心亮点
 
-> **关于本仓库的两个"异常"指标：0 PR、大量 Open Issue。**
->
-> **0 PR** — 代码审查通过本地部署的 Gerrit 完成。提交后自动触发 Jenkins CI 门禁流水线：
-> 编译 → 单元测试 → clang-format → clang-tidy，全部通过后才合入。
-> ![Jenkins CI](docs/pictures/jenkins-ci.png)
-> GitHub 侧同步相同的 CI 流程（上方 badge 可点击查看）。GitHub 仓库作为 Gerrit 的远程镜像，因此 PR 数为 0。
->
-> **大量 Open Issue** — Issue 在此承担个人任务看板的角色。每个 design/feature 拆分为独立 Issue，用 Label 区分类型、Milestone 归组交付：
-> - `feature` — 新功能开发
-> - `fix` — 缺陷修复
-> - `refine&improvement` — 功能之外的优化（重构、文档、工程改进）
->
-> Open 的 Issue 不是未解决的 bug，是 backlog 里规划中的任务。
->
-
-
----
+- 确定性执行：FlowHub 自身代码路径全静态内存、零堆分配、无锁并发，执行路径确定、任务状态隔离
+- 消息驱动路由：16-bit GTID 统一寻址，路由层 O(1) 定位执行单元；执行单元无状态，状态随任务 Context 流转
+- 工程证据：24 篇 ADR 决策记录、消息与 Context 由 `.mt` 定义 + 脚本生成、`ctest` 399 用例全绿、Gerrit + Jenkins CI
 
 ## 架构
 
-![Architecture](docs/architecture.drawio.svg)
+FlowHub 按能力划分为四层（UserAccess / Session / Business / Service），消息以 GTID 为统一寻址标识，执行单元无状态、相互解耦。task 没有固定路径：可由用户消息或系统内部发起，完成方式取决于任务类型（回用户通道 / 触发外部服务 / 更新任务 Context）。
 
-四层。UserAccess 层不分面；
-Session、Business、Service 层各分控制面（C）和数据面（D）。
-跨层只走同面，跨面只走同层。
-Business D 面以 Router 为入口，Service D 面以 ServiceGateway 为入口。
+![FlowHub 架构分层图](docs/architecture/flowhub-arch.svg)
 
----
+*控制面（C）负责生命周期管理，数据面（D）负责消息路由与任务执行；GTID 路由：入口 SessionDispatcher → 编排器（如 AiAgora）→ D 面 Router 按 gtid>>6 分发至业务 EO；执行单元无状态，状态随 Context 流转。*
 
-## 设计
+- **编排器（如 AiAgora）**：负责编排的一类执行单元，是每个任务的调度中枢，把任务拆解后以请求-响应方式分派给业务 EO，子任务协调集中在此
+- **子任务执行单元（业务 EO）**：子任务的实际执行者，接收消息、执行具体业务逻辑并返回结果；无状态、可独立测试
+- **入口路由**：路由层按 GTID 掩码 O(1) 定位业务 EO，组件之间不持对方地址、相互解耦
 
-### 设计起点
+**编排能力演示**（`docs/alg/alg00006`）：以多 AI 话题辩论为验证场景，编排器（AiAgora）将一个话题拆解为携带多个目标 GTID 的子任务，经 Router 分发后由执行单元按各自任务 Context 处理（当前为单个 AiChatBus 顺序处理各子任务，未涉及多实例负载均衡）；编排器按序收齐各子任务应答、合并入累积对话历史，并自动推进「发言 → 评判 → 下一轮」的状态循环，无需前端介入。该演示验证了编排器「拆解任务、分派执行单元、汇总并推进状态」的编排能力。
 
-目标是一个**通用底座**——与具体业务无关，未来按需接入新业务，且业务类型尚未全部确定。
+## 工程实践与证据
 
-这意味着架构必须具备**彻底解耦**的能力：
+24 篇 ADR（0007-0030）记录全部关键设计决策，含选型理由与替代方案分析；重点：ADR-0009 Context 存储与访问规则、ADR-0011 GTID 路由键、ADR-0016 用 EoEnv 隐藏 CAF。完整索引见[文档](#构建与文档)。
 
-1. 接入的协议、运行的业务、用户的前端，三者独立演进，互不影响 → **至少分服务层、业务层、接入层**
-2. 中间还需要总控调度和资源管理 → **在业务层之上增加会话层**
-3. 7×24 运行 → **禁止动态内存，避免碎片**
+- **零堆分配**：FlowHub 自身代码路径运行时无 `malloc/new`，内存边界编译期静态确定
+- **无锁并发**：Context 随任务流转，执行单元间无共享可变状态，无需互斥锁
+- **缓存行隔离**：任务上下文按缓存行对齐，防伪共享
+- **代码生成**：消息与 Context 由 `.mt` 定义，脚本统一生成序列化、任务类型与缓存行对齐；只需定义数据，重复代码交给脚本
 
-结合 5G 通信工程的成熟实践，选择了**全消息触发的 Actor 模型**。每个 Actor 自身无状态——所有状态存在静态 Context 中，执行单元与任务彻底解耦。
+## 工程工作流
 
-底层框架选用 **CAF**（C++ Actor Framework），C++ 生态中 Actor 模型最成熟的实现。
+- **代码评审**：更改经自建 Gerrit 的 patchset 评审控制，不使用 GitHub Pull Request
+- **自动验证**：提交自动触发本地 Jenkins 构建，执行编译、单测、格式与静态检查
+- **需求关联**：feature 开发任务用 GitHub issue 跟踪，commit message 按 `[Feature号] 描述 (#issue号)` 格式，由 `scripts/check-issue-ref.sh` 校验：本地 commit hook 以 `--strict` 拦截不合规提交，CI 中仅警告，实现提交到需求的可追溯
 
-### 核心思路
+相关脚本与 systemd 服务均位于 `scripts/` 目录。
 
-通信系统中消息驱动只在大组件边界上，组件内部仍是直接调用。Flow Hub 把这一粒度推到极致——**每个业务逻辑单元（EO——Entity Object）都是独立 Actor**，互相之间全走消息，不存在直接调用。
+commit message 示例：
 
-- EO 不持有状态 → 状态全在 Context 里
-- EO 崩溃换一个，Context 还在 → 天然支持热备、故障恢复
-- 如果某个EO的负载过重，可以建立多个同类型EO并行处理 → 因为执行单元与业务解耦
-- 层间无编译期耦合 → 新增协议只加 Adapter，新增业务只加 EO，已有代码不动
-- 裁剪方便 → 部署到低算力硬件，砍掉不需要的 EO 即可
-- 所有EO全部在整个系统启动时构造完毕，除特殊情况下不会动态建立和销毁EO。
+```text
+[FT00XX] 描述 (#87)
+```
 
-### 四层架构
+## 演进
 
-| 层 | 角色 | C 面（控制） | D 面（数据） |
-|------|------|-------------|-------------|
-| **UserAccess** | 前端入口 | — | 协议翻译 + 消息分拣 |
-| **Session** | 身份 & 生命周期 | GTID 分配 | 消息转发 / fan-out |
-| **Business** | 业务编排 | 资源分配 | GTID 路由 + 业务 EO |
-| **Service** | 协议对接 | 设备注册表 | 出向分发 + 协议 Adapter |
+主干基于 Linux + CAF，ctest 全绿。OSAL 跨 OS 抽象层（Linux ↔ Zephyr RTOS）接口已冻结、未合入主干，为跨平台适配预留；落地规划见[路线图](docs/roadmap.md)。
 
-跨层只走同面，跨面只走同层。D 面 EO 崩溃，C 面感知并恢复——**C 面不崩，系统自愈。**
+## 构建与文档
 
-### 工程保障
+```bash
+cmake -B build && cmake --build build -j && ctest --test-dir build
+```
 
-- **零堆分配**：Context 全在静态内存池，热路径无 `malloc`，cache line 隔离防止多核伪共享
-- **代码生成**：34 种消息 + 全部 Context 结构由脚本从 `.mt` 定义文件自动生成，消除手写不一致
-- **ADR 驱动**：每个设计决策有对应 ADR（`docs/adr/`，24 篇）
+构建依赖标准工具链（CMake/GCC）与 CAF（C++ Actor Framework，CMake 自动获取），验证环境 Linux 主机，`ctest` 全绿（399 个用例）是工程可复现的最小证明。
 
----
+[ADR 索引](docs/adr/README.md) · [路线图](docs/roadmap.md)
 
-## Demo
-
-多 AI 协同讨论——用户提问 → 两个 AI 各自回答 → 裁判判断一致性 → 不一致则交叉辩论 → 收敛或达到上限。
-
-验证的不是 AI 能力，是编排：fan-out 分发、回合控制、条件判断。**像编排设备一样编排 AI。**
-
----
-
-## 关于本项目
-
-开发遵循文档先行的流程：需求 → ADR 决策记录 → 代码 → 单元测试。24 篇 ADR（`docs/adr/`）记录了全部关键设计决策。
-
-CI 门禁流水线（编译 → 单元测试 → clang-format → clang-tidy）在 Gerrit 和 GitHub 两侧同步运行。代码审查和自动化门禁不是团队才需要的仪式，是工程习惯。
-
----
-
-**韵启龙 (Yun Qilong)** · 5 年 5G L2 研发 · [GitHub](https://github.com/qilyun)
-
----
-
-[ADR 索引](docs/adr/README.md) · [路线图](docs/roadmap.md) · [技术债](docs/doc-debt.md)
