@@ -2,13 +2,13 @@
 
 **C++17 消息驱动的确定性编排框架** —— 控制面/数据面分离、无状态执行单元、静态内存、消息按 ID O(1) 路由。
 
-基于 C++17 与 CAF（C++ Actor Framework）的确定性任务编排框架：FlowHub 自身代码路径全静态内存、无锁并发、任务状态随 Context 流转。覆盖架构、编码、测试、CI 与文档——24 篇 ADR 决策记录、399 个 ctest 用例全绿、Gerrit + Jenkins CI 门禁。
+基于 C++17 与 CAF（C++ Actor Framework）的确定性任务编排框架：FlowHub 自身代码路径全静态内存、无锁并发、任务状态随 Context 流转。覆盖架构、编码、测试、CI 与文档——24 篇 ADR 决策记录、399 个 GTest/gMock 用例全绿、Gerrit + Jenkins CI 门禁。
 
 ## 核心亮点
 
 - 确定性执行：FlowHub 自身代码路径全静态内存、零堆分配、无锁并发，执行路径确定、任务状态隔离
 - 消息驱动路由：16-bit GTID 统一寻址，路由层 O(1) 定位执行单元；执行单元无状态，状态随任务 Context 流转
-- 工程证据：24 篇 ADR 决策记录、消息与 Context 由 `.mt` 定义 + 脚本生成、`ctest` 399 用例全绿、Gerrit + Jenkins CI
+- 工程证据：24 篇 ADR 决策记录、消息与 Context 由 `.mt` 定义 + 脚本生成、`GTest/gMock` 399 用例全绿、Gerrit + Jenkins CI
 
 ## 架构
 
@@ -49,7 +49,7 @@ commit message 示例：
 
 ## 演进
 
-主干基于 Linux + CAF，ctest 全绿。OSAL 跨 OS 抽象层（Linux ↔ Zephyr RTOS）接口已冻结、未合入主干，为跨平台适配预留；落地规划见[路线图](docs/roadmap.md)。
+主干基于 Linux + CAF，单测全绿。OSAL 跨 OS 抽象层（Linux ↔ Zephyr RTOS）接口已冻结、未合入主干，为跨平台适配预留；落地规划见[路线图](docs/roadmap.md)。
 
 ## 构建与文档
 
@@ -57,7 +57,7 @@ commit message 示例：
 cmake -B build && cmake --build build -j && ctest --test-dir build
 ```
 
-构建依赖标准工具链（CMake/GCC）与 CAF（C++ Actor Framework，CMake 自动获取），验证环境 Linux 主机，`ctest` 全绿（399 个用例）是工程可复现的最小证明。
+构建依赖标准工具链（CMake/GCC）与 CAF（C++ Actor Framework，CMake 自动获取），验证环境 Linux 主机，单测全绿（399 个用例，GTest/gMock）是工程可复现的最小证明。
 
 [ADR 索引](docs/adr/README.md) · [路线图](docs/roadmap.md)
 
