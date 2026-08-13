@@ -1,14 +1,16 @@
 # FlowHub
 
+[![CI](https://github.com/yun-qilong/flow_hub/actions/workflows/ci.yml/badge.svg)](https://github.com/yun-qilong/flow_hub/actions/workflows/ci.yml)
+
 **C++17 消息驱动的确定性编排框架** —— 控制面/数据面分离、无状态执行单元、静态内存、消息按 ID O(1) 路由。
 
-基于 C++17 与 CAF（C++ Actor Framework）的确定性任务编排框架：FlowHub 自身代码路径全静态内存、无锁并发、任务状态随 Context 流转。覆盖架构、编码、测试、CI 与文档——24 篇 ADR 决策记录、399 个 GTest/gMock 用例全绿、Gerrit + Jenkins CI 门禁。
+基于 C++17 与 CAF（C++ Actor Framework）的确定性任务编排框架：FlowHub 自研模块稳态路径全静态内存、无锁并发（CAF 框架初始化与内部队列除外）、任务状态随 Context 流转。覆盖架构、编码、测试、CI 与文档——24 篇 ADR 决策记录、169 个自有 GTest/gMock 用例全绿、Gerrit + Jenkins + GitHub Actions CI 门禁。
 
 ## 核心亮点
 
-- 确定性执行：FlowHub 自身代码路径全静态内存、零堆分配、无锁并发，执行路径确定、任务状态隔离
+- 确定性执行：FlowHub 自研模块稳态路径全静态内存、零堆分配、无锁并发（CAF 框架初始化、内部队列与 actor 调度除外），执行路径确定、任务状态隔离
 - 消息驱动路由：16-bit GTID 统一寻址，路由层 O(1) 定位执行单元；执行单元无状态，状态随任务 Context 流转
-- 工程证据：24 篇 ADR 决策记录、消息与 Context 由 `.mt` 定义 + 脚本生成、`GTest/gMock` 399 用例全绿、Gerrit + Jenkins CI
+- 工程证据：24 篇 ADR 决策记录、消息与 Context 由 `.mt` 定义 + 脚本生成、`GTest/gMock` 169 自有用例全绿（仓库 ctest 共注册 399 个，含 CAF 框架自带 230 个）、Gerrit + Jenkins CI
 
 ## 架构
 
@@ -28,7 +30,7 @@ FlowHub 按能力划分为四层（UserAccess / Session / Business / Service）�
 
 24 篇 ADR（0007-0030）记录全部关键设计决策，含选型理由与替代方案分析；重点：ADR-0009 Context 存储与访问规则、ADR-0011 GTID 路由键、ADR-0016 用 EoEnv 隐藏 CAF。完整索引见[文档](#构建与文档)。
 
-- **零堆分配**：FlowHub 自身代码路径运行时无 `malloc/new`，内存边界编译期静态确定
+- **零堆分配**：FlowHub 自研模块稳态路径运行时无 `malloc/new`，内存边界编译期静态确定；CAF 框架初始化与内部队列除外
 - **无锁并发**：Context 随任务流转，执行单元间无共享可变状态，无需互斥锁
 - **缓存行隔离**：任务上下文按缓存行对齐，防伪共享
 - **代码生成**：消息与 Context 由 `.mt` 定义，脚本统一生成序列化、任务类型与缓存行对齐；只需定义数据，重复代码交给脚本
@@ -36,7 +38,9 @@ FlowHub 按能力划分为四层（UserAccess / Session / Business / Service）�
 ## 工程工作流
 
 - **代码评审**：更改经自建 Gerrit 的 patchset 评审控制，不使用 GitHub Pull Request
-- **自动验证**：提交自动触发本地 Jenkins 构建，执行编译、单测、格式与静态检查
+- **自动验证**：提交自动触发本地 Jenkins 构建，执行编译、单测（`ctest -L flowhub`，168 个自有测试）、格式与静态检查；GitHub Actions 公开 CI 同步执行同一流水线，见仓库 Actions 页
+
+> 说明：本地全量自有用例 169 个；CI 流水线计数 168 个，差异为 `examples/` 下 1 个示例未打 `flowhub` 标签，属预期。
 - **需求关联**：feature 开发任务用 GitHub issue 跟踪，commit message 按 `[Feature号] 描述 (#issue号)` 格式，由 `scripts/check-issue-ref.sh` 校验：本地 commit hook 以 `--strict` 拦截不合规提交，CI 中仅警告，实现提交到需求的可追溯
 
 相关脚本与 systemd 服务均位于 `scripts/` 目录。
@@ -46,6 +50,10 @@ commit message 示例：
 ```text
 [FT00XX] 描述 (#87)
 ```
+
+## 嵌入式实时迁移
+
+FlowHub 的确定性设计——静态内存池、无锁队列/确定性路由、可诊断性——与嵌入式实时控制/调度场景对确定性、资源上界和可观测性的要求一致。这些设计通过库级约束保证，不依赖具体 OS，可直接作为实时任务调度/控制流的方法论文本。OSAL 跨平台抽象层（Linux ↔ Zephyr RTOS）接口已冻结，可移植性预研已完成验证，RTOS 移植持续推进中，落地规划见[路线图](docs/roadmap.md)。
 
 ## 演进
 
@@ -57,7 +65,7 @@ commit message 示例：
 cmake -B build && cmake --build build -j && ctest --test-dir build
 ```
 
-构建依赖标准工具链（CMake/GCC）与 CAF（C++ Actor Framework，CMake 自动获取），验证环境 Linux 主机，单测全绿（399 个用例，GTest/gMock）是工程可复现的最小证明。
+构建依赖标准工具链（CMake/GCC）与 CAF（C++ Actor Framework，CMake 自动获取），验证环境 Linux 主机，单测全绿（FlowHub 自有 169 个用例，GTest/gMock；CI 门禁执行 `ctest -L flowhub` 共 168 个）是工程可复现的最小证明。
 
 [ADR 索引](docs/adr/README.md) · [路线图](docs/roadmap.md)
 
