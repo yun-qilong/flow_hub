@@ -1,16 +1,20 @@
 pipeline {
   agent any
+  parameters {
+    choice(name: 'CI_MODE', choices: ['full', 'precheck'])
+  }
   stages {
     stage('Checkout') {
       steps {
         checkout([$class: 'GitSCM',
           branches: [[name: 'FETCH_HEAD']],
-          userRemoteConfigs: [[refspec: params.GERRIT_REFSPEC ?: 'refs/heads/main', url: 'ssh://qilyun@localhost:29418/flow_hub']],
+          userRemoteConfigs: [[refspec: params.GERRIT_REFSPEC ?: 'refs/heads/main', url: 'ssh://qilyun@localhost:19418/flow_hub']],
           extensions: [[$class: 'RelativeTargetDirectory', relativeTargetDir: 'src']]
         ])
       }
     }
     stage('Issue Check') {
+      when { expression { params.CI_MODE == 'full' } }
       steps {
         catchError(buildResult: 'FAILURE', stageResult: 'FAILURE') {
           dir('src') {
@@ -32,6 +36,7 @@ pipeline {
       }
     }
     stage('Format') {
+      when { expression { params.CI_MODE == 'full' } }
       steps {
         dir('src') {
           sh '''#!/bin/bash
@@ -50,8 +55,7 @@ echo "Format check passed"'''
         }
       }
     }
-    stage('Tidy') {
-      steps {
+    stage('Tidy') {      when { expression { params.CI_MODE == 'full' } }      steps {
         dir('src') {
           sh '''echo "=== clang-tidy diagnostics ==="
 TIDY_BIN="$(ls -d "$HOME"/tools/llvm-*/bin/clang-tidy 2>/dev/null | sort -V | tail -1)"

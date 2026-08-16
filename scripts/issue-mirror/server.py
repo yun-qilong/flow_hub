@@ -9,7 +9,7 @@ TOKEN_FILE = os.path.expanduser("~/.flowhub/mirror-token")
 TOKEN = open(TOKEN_FILE).read().strip() if os.path.exists(TOKEN_FILE) else None
 
 GERRIT_HOST = "localhost"
-GERRIT_PORT = "29418"
+GERRIT_PORT = "19418"
 GERRIT_USER = "qilyun"
 GERRIT_PROJECT = "flow_hub"
 
@@ -301,4 +301,4 @@ pre code {{ background: none; padding: 0; }}
     return html
 
 
-app.run(host="127.0.0.1", port=8091)
+app.run(host="127.0.0.1", port=18091)

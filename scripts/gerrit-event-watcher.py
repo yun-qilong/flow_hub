@@ -1,5 +1,19 @@
 #!/usr/bin/env python3
-"""Gerrit stream-events watcher → triggers Jenkins build, posts Verified vote."""
+"""占位（已迁移通用版）：AI 留痕 + CI 分流逻辑在 ~/ci_common/gerrit_event_watcher_lib.py。
+
+本文件仅转发到通用入口；i sg 启动方式不变（python3 -u 本文件）。
+下方旧逻辑为死代码（不再被调用），后续可删除。
+配置：~/ci_common/projects/flowhub.json
+"""
+
+import os
+import sys
+
+CI_COMMON = os.path.expanduser("~/ci_common")
+PROJECT_JSON = os.path.join(CI_COMMON, "projects", "flowhub.json")
+
+sys.path.insert(0, CI_COMMON)
+from gerrit_event_watcher_lib import main  # noqa: E402
 
 import json
 import subprocess
@@ -11,10 +25,10 @@ import urllib.request
 from base64 import b64encode
 
 GERRIT_HOST = "localhost"
-GERRIT_PORT = "29418"
+GERRIT_PORT = "19418"
 GERRIT_USER = "ci"
 SSH_KEY = os.path.expanduser("~/.ssh/ci_gerrit_key")
-JENKINS_URL = "http://localhost:8090"
+JENKINS_URL = "http://localhost:18090"
 JENKINS_JOB = "flowhub-ci"
 JENKINS_USER = "admin"
 # Read from secrets file
@@ -156,7 +170,7 @@ def get_jenkins_api(path):
 def poll_build_result(build_url, change_num, patchset_num):
     """Poll Jenkins build until completion, then post final Verified vote."""
     # Extract job name and build number from URL
-    # URL: http://localhost:8090/job/flowhub-ci/123
+    # URL: http://localhost:18090/job/flowhub-ci/123
     parts = build_url.rstrip("/").split("/")
     build_num = parts[-1]
     job_name = parts[-2]
@@ -213,4 +227,7 @@ def stream_events():
         time.sleep(5)
 
 if __name__ == "__main__":
-    stream_events()
+    _args = sys.argv[1:]
+    if "--config" not in _args:
+        _args = ["--config", PROJECT_JSON] + _args
+    sys.exit(main(_args))

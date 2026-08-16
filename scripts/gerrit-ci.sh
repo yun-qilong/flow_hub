@@ -10,7 +10,7 @@ usage() {
   --project PROJECT    Gerrit 项目名 (默认: flow_hub)
   --branch BRANCH      目标分支 (默认: main)
   --gerrit-host HOST   Gerrit 主机 (默认: localhost)
-  --gerrit-port PORT   Gerrit SSH 端口 (默认: 29418)
+  --gerrit-port PORT   Gerrit SSH 端口 (默认: 19418)
   --gerrit-user USER   Gerrit SSH 用户 (默认: qilyun)
   --build-dir DIR      构建目录 (默认: /tmp/gerrit-ci-build)
   --help               显示帮助
@@ -23,7 +23,7 @@ GERRIT_REF=""
 PROJECT="${GERRIT_PROJECT:-flow_hub}"
 BRANCH="${GERRIT_BRANCH:-main}"
 GERRIT_HOST="${GERRIT_HOST:-localhost}"
-GERRIT_PORT="${GERRIT_PORT:-29418}"
+GERRIT_PORT="${GERRIT_PORT:-19418}"
 GERRIT_USER="${GERRIT_USER:-qilyun}"
 BUILD_DIR="${BUILD_DIR:-/tmp/gerrit-ci-build}"
 

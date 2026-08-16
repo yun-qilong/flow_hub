@@ -144,7 +144,7 @@ def save_state(state_file: str, seen: set):
 def main():
     parser = argparse.ArgumentParser(description="Gerrit CI Watcher (poll)")
     parser.add_argument("--gerrit-host", default="localhost")
-    parser.add_argument("--gerrit-port", type=int, default=29418)
+    parser.add_argument("--gerrit-port", type=int, default=19418)
     parser.add_argument("--gerrit-user", default="qilyun")
     parser.add_argument("--ci-script", default=os.path.join(
         os.path.dirname(os.path.abspath(__file__)), "gerrit-ci.sh"))
